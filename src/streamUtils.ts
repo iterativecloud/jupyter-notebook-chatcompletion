@@ -1,12 +1,14 @@
 import axios, { AxiosResponse } from "axios";
 import { CreateChatCompletionResponse } from "openai";
-import { CancellationToken } from "vscode";
+import { CancellationToken, window } from "vscode";
 import { FinishReason } from "./finishReason";
-import { output } from "./extension";
+
+export const output = window.createOutputChannel("Notebook ChatCompletion");
 
 export async function* streamChatCompletion(
   response: AxiosResponse<CreateChatCompletionResponse, AsyncIterable<Buffer>>,
-  token: CancellationToken): AsyncGenerator<string | FinishReason, void, undefined> {
+  token: CancellationToken
+): AsyncGenerator<string | FinishReason, void, undefined> {
   // types are unfortunately not well defined so we have to cast to unknown first to get an AsyncIterable<T>
   const dataStream = response.data as unknown as AsyncIterable<Buffer>;
 
@@ -44,13 +46,51 @@ export async function* streamChatCompletion(
         case "stop": // API returned complete model output.
           output.append("FINISH_REASON_STOP" + "\n");
           yield FinishReason.stop;
-
+          return;
         case null:
         case undefined:
         case "null": // API response still in progress or incomplete
           continue;
         default: // API returned a stop_reason unknown to us
           throw new Error("Unhandled stop_reason:" + finishReason);
+      }
+    }
+  }
+}
+
+export async function* bufferWholeChunks(
+  stream: AsyncGenerator<string | FinishReason, void, undefined>
+): AsyncGenerator<string | FinishReason, void, undefined> {
+  let buffer = "";
+  let value: string | void | FinishReason = undefined;
+
+  while ((value = (await stream.next()).value)) {
+    if (
+      typeof value === "string" &&
+      !value.includes("\n") &&
+      !value.includes(" ") &&
+      !value.includes("-") &&
+      !value.includes("<") &&
+      !value.includes(">") &&
+      !value.includes("(") &&
+      !value.includes(")") &&
+      !value.includes(",") &&
+      !value.includes(".") &&
+      !value.includes("'") &&
+      !value.includes('"')
+    ) {
+      buffer += value;
+    } else {
+      if (buffer.length > 0) {
+        if (typeof value === "string") {
+          yield buffer + value;
+        } else {
+          yield buffer;
+          yield value;
+        }
+        buffer = "";
+      } else {
+        yield value;
       }
     }
   }
