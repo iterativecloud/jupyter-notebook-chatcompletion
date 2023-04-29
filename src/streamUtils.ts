@@ -3,8 +3,6 @@ import { CreateChatCompletionResponse } from "openai";
 import { CancellationToken, window } from "vscode";
 import { FinishReason } from "./finishReason";
 
-export const output = window.createOutputChannel("Notebook ChatCompletion");
-
 export async function* streamChatCompletion(
   response: AxiosResponse<CreateChatCompletionResponse, AsyncIterable<Buffer>>,
   token: CancellationToken
@@ -28,7 +26,7 @@ export async function* streamChatCompletion(
 
       const content = json.choices[0].delta.content;
 
-      if (content !== undefined) {
+      if (content !== undefined && content !== "") {
         yield content;
       }
 
@@ -36,15 +34,12 @@ export async function* streamChatCompletion(
 
       switch (finishReason) {
         case "length": // Incomplete model output due to max_tokens parameter or token limit
-          output.append("FINISH_REASON_LENGTH" + "\n");
           yield FinishReason.length;
 
         case "content_filter": // Omitted content due to a flag from OpenAI content filters
-          output.append("FINISH_REASON_CONTENTFILTER" + "\n");
-          yield FinishReason.contentFilter;
+        yield FinishReason.contentFilter;
 
         case "stop": // API returned complete model output.
-          output.append("FINISH_REASON_STOP" + "\n");
           yield FinishReason.stop;
           return;
         case null:
@@ -85,7 +80,9 @@ export async function* bufferWholeChunks(
         if (typeof value === "string") {
           yield buffer + value;
         } else {
-          yield buffer;
+          if (buffer !== "") {
+            yield buffer;
+          }
           yield value;
         }
         buffer = "";

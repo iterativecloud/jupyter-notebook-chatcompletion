@@ -1,6 +1,14 @@
 import axios from "axios";
 import { Configuration, OpenAIApi } from "openai";
-import { CancellationToken, NotebookCellKind, window } from "vscode";
+import {
+  CancellationToken,
+  NotebookCellKind,
+  NotebookEdit,
+  NotebookRange,
+  WorkspaceEdit,
+  window,
+  workspace,
+} from "vscode";
 import { UIProgress } from "./uiProgress";
 import {
   appendTextToCell,
@@ -9,25 +17,30 @@ import {
 } from "./cellUtils";
 import { FinishReason } from "./finishReason";
 import { streamChatCompletion, bufferWholeChunks } from "./streamUtils";
+import { CompletionType } from "./completionType";
+import { execFileSync } from "child_process";
 
 export const SENDING_COMPLETION_REQUEST = "Sending ChatCompletion request";
 export const RECEIVING_TOKENS = "Receiving tokens...";
 const pythonCodeBlockStart = "```python\n";
-const codeBlockEnd = "```\n";
+const codeBlockEnd = "```";
 
 export const output = window.createOutputChannel("Notebook ChatCompletion");
 
 export async function generateCompletion(
+  cellIndex: number,
+  completionType: CompletionType,
   progress: UIProgress,
   token: CancellationToken,
   previousFinishReason: FinishReason
 ): Promise<FinishReason> {
   const editor = window.activeNotebookEditor!;
 
-  const messages = await convertCellsToMessages();
-  let cellIndex = editor.selection.end - 1;
+  const messages = await convertCellsToMessages(cellIndex, completionType);
   let currentKind: NotebookCellKind | undefined = undefined;
 
+  // If the generation was previously interrupted, we need to nudge the prompt
+  // toward continuation without repetition of incomplete text.
   if (previousFinishReason === FinishReason.length) {
     // If we see that we previously finished because of length, we assume that the current call is
     // a continuation of an interrupted completion (max token length), and therefore we
@@ -51,6 +64,7 @@ export async function generateCompletion(
   const openai = new OpenAIApi(
     new Configuration({ apiKey: process.env.OI_API_KEY })
   );
+
   const tokenSource = axios.CancelToken.source();
   token.onCancellationRequested(() => tokenSource.cancel());
   output.appendLine("\n" + JSON.stringify(messages, undefined, 2) + "\n");
@@ -69,10 +83,39 @@ export async function generateCompletion(
   for await (let textToken of bufferWholeChunks(
     streamChatCompletion(response, token)
   )) {
-    output.append(textToken.toString());
-
+    // debug output of FinishReaseon
     if (Object.values(FinishReason).includes(textToken as FinishReason)) {
+      switch (textToken) {
+        case FinishReason.length:
+          output.append("FINISH_REASON_LENGTH" + "\n");
+          break;
+        case FinishReason.contentFilter:
+          output.append("FINISH_REASON_CONTENTFILTER" + "\n");
+          break;
+        case FinishReason.stop:
+          output.append("FINISH_REASON_STOP" + "\n");
+          break;
+      }
+
+      const currentCell = editor.notebook.cellAt(cellIndex);
+      const text = currentCell.document.getText();
+
+      // we're wrapping up and may find out that the last cell only contains whitespaces or linesbreak.
+      // in that case, we retroactively removed that last empty cell
+      if (!/\S/.test(text)) {
+        const edit = new WorkspaceEdit();
+        edit.set(currentCell.notebook.uri, [
+          NotebookEdit.deleteCells(
+            new NotebookRange(currentCell.index, currentCell.index + 1)
+          ),
+        ]);
+        await workspace.applyEdit(edit);
+      }
+
       return textToken as FinishReason;
+    } else {
+      // Debug output of text
+      output.append(textToken.toString());
     }
 
     if (typeof textToken !== "string") {
@@ -90,12 +133,12 @@ export async function generateCompletion(
       textToken.includes(codeBlockEnd) &&
       currentKind === NotebookCellKind.Code
     ) {
-      // a code block end where we transition to a markdown cell
-      // only really makes sense when we already had a code cell
-      // We assume a  code block end, followed by a new markdown cell
+      textToken = textToken.replace(codeBlockEnd, "");
+
+      // if after removing the backticks we still got some remaining that isn't linebreaks or whitespaces,
+      // we create a new markdown cell
       currentKind = NotebookCellKind.Markup;
       cellIndex = await insertCell(editor, cellIndex, currentKind, "markdown");
-      textToken = textToken.replace(codeBlockEnd, "");
     }
 
     if (currentKind === undefined) {

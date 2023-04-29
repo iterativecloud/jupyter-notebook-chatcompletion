@@ -16,17 +16,41 @@
   "contributes": {
     "commands": [
       {
-        "command": "notebook-chatcompletion.generateNewCodeCell",
-        "title": "Generate new code cell via ChatCompletion"
+        "command": "notebook-chatcompletion.sendCellAndAbove",
+        "title": "Send this Cell and Above for Completion",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "notebook-chatcompletion.sendCell",
+        "title": "Send this Cell for Completion",
+        "icon": "$(comment)"
       }
     ],
     "keybindings": [
       {
-          "command": "notebook-chatcompletion.generateNewCodeCell",
+          "command": "notebook-chatcompletion.sendCellAndAbove",
           "key": "ctrl+shift+enter",
           "mac": "ctrl+cmd+enter"
+      },
+      {
+        "command": "notebook-chatcompletion.sendCell",
+        "key": "ctrl+shift+f5",
+        "mac": "ctrl+cmd+f5"
+    }
+      
+  ],
+  "menus": {
+    "notebook/cell/title": [
+      {
+        "command": "notebook-chatcompletion.sendCellAndAbove",
+        "group": "inline"
+      },
+      {
+        "command": "notebook-chatcompletion.sendCell",
+        "group": "inline"
       }
-  ]
+    ]
+  }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

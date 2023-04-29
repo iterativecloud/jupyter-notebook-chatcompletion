@@ -14,6 +14,7 @@ import {
   workspace,
   window,
 } from "vscode";
+import { CompletionType } from "./completionType";
 
 const ADDITIONAL_PROMPT_INFO_MESSAGE =
   "Select any additional information you want to include in the prompt";
@@ -24,6 +25,11 @@ export async function appendTextToCell(
   textToken: string
 ) {
   const existingCell = editor.notebook.cellAt(cellIndex);
+
+  // If the cell is empty, it doesn't make sense to add any superfluous linebreaks, tabs or whitespaces
+  if (existingCell.document.getText().length === 0 && !/\S/.test(textToken)) {
+    return;
+  }
 
   if (textToken.startsWith("\n")) {
     // we check if this is an empty cell. In that case, it doesn't make sense to start with a line break
@@ -72,9 +78,9 @@ export async function insertCell(
   await commands.executeCommand("notebook.cell.quitEdit");
 
   if (cellKind === NotebookCellKind.Code && languageId === "python") {
-    await commands.executeCommand("notebook.cell.insertCodeCellBelow");
+    await commands.executeCommand("notebook.cell.insertCodeCellBelow", [ { index: cellIndex}]);
   } else {
-    await commands.executeCommand("notebook.cell.insertMarkdownCellBelow");
+    await commands.executeCommand("notebook.cell.insertMarkdownCellBelow", [ { index: cellIndex}]);
   }
 
   const edit = new WorkspaceEdit();
@@ -91,26 +97,21 @@ export async function insertCell(
   return cellIndex;
 }
 
-export async function convertCellsToMessages(): Promise<
+export async function convertCellsToMessages( cellIndex:number, completionType: CompletionType): Promise<
   ChatCompletionRequestMessage[]
 > {
   const editor = window.activeNotebookEditor!;
   const notebook = editor.notebook;
-  let selection = editor.selection;
+
+  const startCellIndex = completionType === CompletionType.currentCellAndAbove ? 0 : cellIndex;
 
   const diagnostics = languages
     .getDiagnostics()
     .filter(([uri]) => uri.path === notebook.uri.path)
     .flatMap(([, diag]) => diag);
 
-  // if the user just has a single cell selected, we include all cells
-  if (selection.start === selection.end - 1) {
-    selection = new NotebookRange(0, selection.end);
-  }
-
   const cellInfos = notebook
-    .getCells()
-    .slice(selection.start, selection.end)
+    .getCells(new NotebookRange( startCellIndex, cellIndex + 1))
     .map((cell) => {
       const problems = diagnostics.filter(
         (d) => cell.document.validateRange(d.range) === d.range
@@ -166,10 +167,19 @@ export async function convertCellsToMessages(): Promise<
       );
     }
   });
-  messages.push({
-    role: ChatCompletionRequestMessageRoleEnum.System,
-    content:
+
+  const totalLengthUserMessages = messages.reduce((accumulator, currentValue) => {
+    return accumulator + currentValue.content.length;
+  }, 0);
+  
+  // When the user's input is very short, the large language model tend to pay too much attention to the system message and starts to speak about it, which is confusing for the user. Empirically, length 32 seems to be a good threshold to avoid this.
+  if (totalLengthUserMessages > 32) {
+    messages.push({
+      role: ChatCompletionRequestMessageRoleEnum.System,
+      content:
       "Format your answer as markdown. If you include a markdown code block, specify the language.",
-  });
+    });
+  }
+  
   return messages;
 }
