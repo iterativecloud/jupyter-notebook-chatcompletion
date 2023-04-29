@@ -7,7 +7,7 @@
     "vscode": "^1.76.0"
   },
   "categories": [
-    "Other"
+    "Notebooks"
   ],
   "activationEvents": [
     "onNotebook:jupyter-notebook"
@@ -34,8 +34,8 @@
       },
       {
         "command": "notebook-chatcompletion.sendCell",
-        "key": "ctrl+shift+f5",
-        "mac": "ctrl+cmd+f5"
+        "key": "ctrl+shift+space",
+        "mac": "ctrl+cmd+space"
     }
       
   ],
