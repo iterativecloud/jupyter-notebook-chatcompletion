@@ -9,16 +9,15 @@ import {
   window,
   workspace,
 } from "vscode";
-import { UIProgress } from "./uiProgress";
 import {
   appendTextToCell,
-  insertCell,
   convertCellsToMessages,
+  insertCell,
 } from "./cellUtils";
-import { FinishReason } from "./finishReason";
-import { streamChatCompletion, bufferWholeChunks } from "./streamUtils";
 import { CompletionType } from "./completionType";
-import { execFileSync } from "child_process";
+import { FinishReason } from "./finishReason";
+import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
+import { UIProgress } from "./uiProgress";
 
 export const SENDING_COMPLETION_REQUEST = "Sending ChatCompletion request";
 export const RECEIVING_TOKENS = "Receiving tokens...";

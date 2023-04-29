@@ -11,8 +11,8 @@ import {
   WorkspaceEdit,
   commands,
   languages,
-  workspace,
   window,
+  workspace,
 } from "vscode";
 import { CompletionType } from "./completionType";
 
@@ -78,16 +78,20 @@ export async function insertCell(
   await commands.executeCommand("notebook.cell.quitEdit");
 
   if (cellKind === NotebookCellKind.Code && languageId === "python") {
-    await commands.executeCommand("notebook.cell.insertCodeCellBelow", [ { index: cellIndex}]);
+    await commands.executeCommand("notebook.cell.insertCodeCellBelow", [
+      { index: cellIndex },
+    ]);
   } else {
-    await commands.executeCommand("notebook.cell.insertMarkdownCellBelow", [ { index: cellIndex}]);
+    await commands.executeCommand("notebook.cell.insertMarkdownCellBelow", [
+      { index: cellIndex },
+    ]);
   }
 
   const edit = new WorkspaceEdit();
   let cell = editor.notebook.cellAt(cellIndex);
   edit.set(cell.notebook.uri, [
     NotebookEdit.updateCellMetadata(cell.index, {
-      custom: { metadata: { role: "assistant" } },
+      custom: { metadata: { tags: ["assistant"] } },
     }),
   ]);
   await workspace.applyEdit(edit);
@@ -97,13 +101,15 @@ export async function insertCell(
   return cellIndex;
 }
 
-export async function convertCellsToMessages( cellIndex:number, completionType: CompletionType): Promise<
-  ChatCompletionRequestMessage[]
-> {
+export async function convertCellsToMessages(
+  cellIndex: number,
+  completionType: CompletionType
+): Promise<ChatCompletionRequestMessage[]> {
   const editor = window.activeNotebookEditor!;
   const notebook = editor.notebook;
 
-  const startCellIndex = completionType === CompletionType.currentCellAndAbove ? 0 : cellIndex;
+  const startCellIndex =
+    completionType === CompletionType.currentCellAndAbove ? 0 : cellIndex;
 
   const diagnostics = languages
     .getDiagnostics()
@@ -111,7 +117,7 @@ export async function convertCellsToMessages( cellIndex:number, completionType: 
     .flatMap(([, diag]) => diag);
 
   const cellInfos = notebook
-    .getCells(new NotebookRange( startCellIndex, cellIndex + 1))
+    .getCells(new NotebookRange(startCellIndex, cellIndex + 1))
     .map((cell) => {
       const problems = diagnostics.filter(
         (d) => cell.document.validateRange(d.range) === d.range
@@ -144,9 +150,14 @@ export async function convertCellsToMessages( cellIndex:number, completionType: 
       : [];
 
   cellInfos.forEach(({ cell, problems, nonImgOutputs }) => {
-    const role =
-      cell.metadata?.custom?.metadata?.role ??
+    let role: ChatCompletionRequestMessageRoleEnum =
       ChatCompletionRequestMessageRoleEnum.User;
+    const tags: string[] = cell.metadata?.custom?.metadata?.tags;
+
+    if (tags && tags.length > 0) {
+      role = tags[0] as ChatCompletionRequestMessageRoleEnum;
+    }
+    
     messages.push({ role: role, content: cell.document.getText() });
 
     if (problems.length && selectedOptions?.includes(options[0])) {
@@ -168,18 +179,21 @@ export async function convertCellsToMessages( cellIndex:number, completionType: 
     }
   });
 
-  const totalLengthUserMessages = messages.reduce((accumulator, currentValue) => {
-    return accumulator + currentValue.content.length;
-  }, 0);
-  
+  const totalLengthUserMessages = messages.reduce(
+    (accumulator, currentValue) => {
+      return accumulator + currentValue.content.length;
+    },
+    0
+  );
+
   // When the user's input is very short, the large language model tend to pay too much attention to the system message and starts to speak about it, which is confusing for the user. Empirically, length 32 seems to be a good threshold to avoid this.
   if (totalLengthUserMessages > 32) {
     messages.push({
       role: ChatCompletionRequestMessageRoleEnum.System,
       content:
-      "Format your answer as markdown. If you include a markdown code block, specify the language.",
+        "Format your answer as markdown. If you include a markdown code block, specify the language.",
     });
   }
-  
+
   return messages;
 }

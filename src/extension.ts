@@ -1,17 +1,14 @@
 import axios from "axios";
 import {
   ExtensionContext,
+  NotebookRange,
   ProgressLocation,
   commands,
-  window,
-  notebooks,
-  Uri,
-  SelectionRange,
-  NotebookRange,
+  window
 } from "vscode";
-import { FinishReason } from "./finishReason";
 import { generateCompletion } from "./completion";
 import { CompletionType } from "./completionType";
+import { FinishReason } from "./finishReason";
 
 const GENERATING_NEXT_CELL = "Generating next cell(s)...";
 const COMPLETION_COMPLETED = "Cell generation completed";
