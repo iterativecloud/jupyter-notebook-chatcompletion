@@ -34,6 +34,9 @@ export async function generateCompletion(
   previousFinishReason: FinishReason
 ): Promise<FinishReason> {
   const editor = window.activeNotebookEditor!;
+  const notebookMetadata = editor.notebook.metadata.custom;
+  const temperature = notebookMetadata?.temperature ?? 0;
+  const model = notebookMetadata?.model ?? "gpt-4";
 
   const messages = await convertCellsToMessages(cellIndex, completionType);
   let currentKind: NotebookCellKind | undefined = undefined;
@@ -66,16 +69,20 @@ export async function generateCompletion(
 
   const tokenSource = axios.CancelToken.source();
   token.onCancellationRequested(() => tokenSource.cancel());
-  output.appendLine("\n" + JSON.stringify(messages, undefined, 2) + "\n");
+
+
+  const requestParams = {
+    model: model,
+    messages,
+    stream: true,
+    temperature: temperature,
+  };
+
+  output.appendLine("\n" + JSON.stringify(requestParams, undefined, 2) + "\n");
   progress.report({ increment: 1, message: SENDING_COMPLETION_REQUEST });
 
   const response = await openai.createChatCompletion(
-    {
-      model: "gpt-4",
-      messages,
-      stream: true,
-      temperature: 0,
-    },
+    requestParams,
     { cancelToken: tokenSource.token, responseType: "stream" }
   );
 

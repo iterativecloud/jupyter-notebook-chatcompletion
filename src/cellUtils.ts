@@ -87,6 +87,8 @@ export async function insertCell(
     ]);
   }
 
+  cellIndex++;
+
   const edit = new WorkspaceEdit();
   let cell = editor.notebook.cellAt(cellIndex);
   edit.set(cell.notebook.uri, [
@@ -95,9 +97,7 @@ export async function insertCell(
     }),
   ]);
   await workspace.applyEdit(edit);
-  cell = editor.notebook.cellAt(cellIndex);
 
-  cellIndex++;
   return cellIndex;
 }
 
@@ -128,16 +128,21 @@ export async function convertCellsToMessages(
       return { cell, problems, nonImgOutputs };
     });
 
+  const addProblemsOption = `Add Problems (${cellInfos.reduce(
+    (a, c) => a + c.problems.length,
+    0
+  )})`;
+  const addOutputsOption = `Add Outputs (${cellInfos.reduce(
+    (a, c) => a + c.nonImgOutputs.length,
+    0
+  )})`;
+
   const options = cellInfos.some((c) => c.problems.length)
-    ? [`Add Problems (${cellInfos.reduce((a, c) => a + c.problems.length, 0)})`]
+    ? [addProblemsOption]
     : [];
+
   if (cellInfos.some((c) => c.nonImgOutputs.length)) {
-    options.push(
-      `Add Outputs (${cellInfos.reduce(
-        (a, c) => a + c.nonImgOutputs.length,
-        0
-      )})`
-    );
+    options.push(addOutputsOption);
   }
 
   var messages: ChatCompletionRequestMessage[] = [];
@@ -157,23 +162,29 @@ export async function convertCellsToMessages(
     if (tags && tags.length > 0) {
       role = tags[0] as ChatCompletionRequestMessageRoleEnum;
     }
-    
+
     messages.push({ role: role, content: cell.document.getText() });
 
-    if (problems.length && selectedOptions?.includes(options[0])) {
+    if (
+      problems.length &&
+      selectedOptions?.some((x) => x.includes(addProblemsOption))
+    ) {
       messages.push({
         role: role ?? "user",
         content:
-          "\nPREVIOUS CELL ERRORS:\n" +
+          "Problems reported by VSCode from previous code:\n" +
           problems.map((p) => `${p.code}: ${p.message}`),
       });
     }
 
-    if (nonImgOutputs.length && selectedOptions?.includes(options[1])) {
-      nonImgOutputs.forEach((o) =>
+    if (
+      nonImgOutputs.length &&
+      selectedOptions?.some((x) => x.includes(addOutputsOption))
+    ) {
+      nonImgOutputs.forEach((output) =>
         messages.push({
           role: role ?? "user",
-          content: "\nPREVIOUS CELL OUTPUT:\n" + o,
+          content: "Output from previous code:\n" + output,
         })
       );
     }
