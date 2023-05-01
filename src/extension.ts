@@ -7,7 +7,7 @@ import {
   WorkspaceEdit,
   commands,
   window,
-  workspace
+  workspace,
 } from "vscode";
 import { generateCompletion } from "./completion";
 import { CompletionType } from "./completionType";
@@ -21,8 +21,8 @@ const COMPLETION_FAILED = "Failed to generate new cell(s)";
 export async function activate(context: ExtensionContext) {
   context.subscriptions.push(
     commands.registerCommand(
-      "notebook-chatcompletion.sendCellAndAbove", (...args) => 
-      generateCells(args, CompletionType.currentCellAndAbove)
+      "notebook-chatcompletion.sendCellAndAbove",
+      (...args) => generateCells(args, CompletionType.currentCellAndAbove)
     )
   );
 
@@ -32,8 +32,29 @@ export async function activate(context: ExtensionContext) {
     )
   );
 
-  context.subscriptions.push(commands.registerCommand("notebook-chatcompletion.setModel", setModel));
-  context.subscriptions.push(commands.registerCommand("notebook-chatcompletion.setTemperature", setTemperature));
+  context.subscriptions.push(
+    commands.registerCommand(
+      "notebook-chatcompletion.setRoleAssistant",
+      setRoleAssistant
+    )
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      "notebook-chatcompletion.setRoleSystem",
+      setRoleSystem
+    )
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand("notebook-chatcompletion.setModel", setModel)
+  );
+  context.subscriptions.push(
+    commands.registerCommand(
+      "notebook-chatcompletion.setTemperature",
+      setTemperature
+    )
+  );
 }
 
 function getErrorMessage(error: unknown) {
@@ -43,14 +64,17 @@ function getErrorMessage(error: unknown) {
   return String(error);
 }
 
-async function generateCells(args : any, completionType: CompletionType) {
+async function generateCells(args: any, completionType: CompletionType) {
   let cellIndex = args[0]?.index;
 
   if (!cellIndex) {
     cellIndex = window.activeNotebookEditor!.selection.end - 1;
   }
 
-  window.activeNotebookEditor!.selection = new NotebookRange(cellIndex,cellIndex);
+  window.activeNotebookEditor!.selection = new NotebookRange(
+    cellIndex,
+    cellIndex
+  );
 
   window.withProgress(
     {
@@ -116,9 +140,20 @@ async function generateCells(args : any, completionType: CompletionType) {
 
 async function setModel() {
   const editor = window.activeNotebookEditor!;
-  let model = await window.showQuickPick(["gpt-4", "gpt-4-0314", "gpt-4-32k", "gpt-4-32k-0314", "gpt-3.5-turbo", "gpt-3.5-turbo-0301", "other"], {
-    placeHolder: "Select the model:",
-  });
+  let model = await window.showQuickPick(
+    [
+      "gpt-4",
+      "gpt-4-0314",
+      "gpt-4-32k",
+      "gpt-4-32k-0314",
+      "gpt-3.5-turbo",
+      "gpt-3.5-turbo-0301",
+      "other",
+    ],
+    {
+      placeHolder: "Select the model:",
+    }
+  );
 
   if (model === "other") {
     model = await window.showInputBox({
@@ -153,9 +188,40 @@ export async function setTemperature() {
     const edit = new WorkspaceEdit();
     edit.set(editor.notebook.uri, [
       NotebookEdit.updateNotebookMetadata({
-        custom: { ...editor.notebook.metadata.custom, temperature: parseFloat(temperature) },
+        custom: {
+          ...editor.notebook.metadata.custom,
+          temperature: parseFloat(temperature),
+        },
       }),
     ]);
     await workspace.applyEdit(edit);
   }
+}
+
+async function setRoleAssistant() {
+  const editor = window.activeNotebookEditor!;
+  const cellIndex = editor.selection.end - 1;
+  const cell = editor.notebook.cellAt(cellIndex);
+
+  const edit = new WorkspaceEdit();
+  edit.set(cell.notebook.uri, [
+    NotebookEdit.updateCellMetadata(cell.index, {
+      custom: { metadata: { tags: ["assistant"] } },
+    }),
+  ]);
+  await workspace.applyEdit(edit);
+}
+
+async function setRoleSystem() {
+  const editor = window.activeNotebookEditor!;
+  const cellIndex = editor.selection.end - 1;
+  const cell = editor.notebook.cellAt(cellIndex);
+
+  const edit = new WorkspaceEdit();
+  edit.set(cell.notebook.uri, [
+    NotebookEdit.updateCellMetadata(cell.index, {
+      custom: { metadata: { tags: ["system"] } },
+    }),
+  ]);
+  await workspace.applyEdit(edit);
 }

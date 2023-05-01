@@ -34,6 +34,16 @@
         "command": "notebook-chatcompletion.setModel",
         "title": "Set Model",
         "icon": "$(hubot)"
+      },
+      {
+        "command": "notebook-chatcompletion.setRoleAssistant",
+        "title": "Set Role to Assistant",
+        "icon": "$(hubot)"
+      },
+      {
+        "command": "notebook-chatcompletion.setRoleSystem",
+        "title": "Set Role to System",
+        "icon": "$(milestone)"
       }
     ],
     "keybindings": [
@@ -66,6 +76,14 @@
         },
         {
           "command": "notebook-chatcompletion.sendCell",
+          "group": "inline"
+        },
+        {
+          "command": "notebook-chatcompletion.setRoleAssistant",
+          "group": "inline"
+        },
+        {
+          "command": "notebook-chatcompletion.setRoleSystem",
           "group": "inline"
         }
       ]
