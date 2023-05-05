@@ -2,6 +2,7 @@ import axios from "axios";
 import { Configuration, OpenAIApi } from "openai";
 import {
   CancellationToken,
+  ConfigurationTarget,
   NotebookCellKind,
   NotebookEdit,
   NotebookRange,
@@ -63,13 +64,16 @@ export async function generateCompletion(
     });
   }
 
-  const openai = new OpenAIApi(
-    new Configuration({ apiKey: process.env.OI_API_KEY })
-  );
+  const openAIApiKey = await getOpenAIApiKey();
+
+  if (!openAIApiKey) {
+    throw new Error("OpenAI API key is not set");
+  }
+
+  const openai = new OpenAIApi(new Configuration({ apiKey: openAIApiKey }));
 
   const tokenSource = axios.CancelToken.source();
   token.onCancellationRequested(() => tokenSource.cancel());
-
 
   const requestParams = {
     model: model,
@@ -81,10 +85,10 @@ export async function generateCompletion(
   output.appendLine("\n" + JSON.stringify(requestParams, undefined, 2) + "\n");
   progress.report({ increment: 1, message: SENDING_COMPLETION_REQUEST });
 
-  const response = await openai.createChatCompletion(
-    requestParams,
-    { cancelToken: tokenSource.token, responseType: "stream" }
-  );
+  const response = await openai.createChatCompletion(requestParams, {
+    cancelToken: tokenSource.token,
+    responseType: "stream",
+  });
 
   for await (let textToken of bufferWholeChunks(
     streamChatCompletion(response, token)
@@ -166,4 +170,37 @@ export async function generateCompletion(
 
   // We came to the end of the string without ever receiving a FinishReason from the API (or we have a bug). This is an invalid state.
   throw new Error("Reached end of stream before receiving stop_reason");
+}
+
+async function getOpenAIApiKey(): Promise<string> {
+  let openaiApiKey = workspace
+    .getConfiguration()
+    .get<string>("notebook-chatcompletion.openaiApiKey");
+  if (!openaiApiKey) {
+    // Prompt the user to enter the API key
+    openaiApiKey = await window.showInputBox({
+      prompt: "Enter your OpenAI API Key:",
+      validateInput: (value) =>
+        value.trim().length > 0 ? null : "API Key cannot be empty",
+    });
+
+    // Save the API key to the extension settings
+    if (openaiApiKey) {
+      await workspace
+        .getConfiguration()
+        .update(
+          "notebook-chatcompletion.openaiApiKey",
+          openaiApiKey,
+          ConfigurationTarget.Global
+        );
+    } else {
+      // If the user didn't provide an API key, show an error message and return
+      window.showErrorMessage(
+        "OpenAI API Key is required for Notebook ChatCompletion to work."
+      );
+      return "";
+    }
+  }
+
+  return openaiApiKey;
 }

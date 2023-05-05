@@ -87,7 +87,19 @@
           "group": "inline"
         }
       ]
-    }
+    },
+    "configuration": [
+      {
+        "title": "Notebook ChatCompletion",
+        "properties": {
+          "notebook-chatcompletion.openaiApiKey": {
+            "type": "string",
+            "default": "",
+            "description": "OpenAI API Key for Notebook ChatCompletion"
+          }
+        }
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
