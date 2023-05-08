@@ -55,6 +55,48 @@ export async function activate(context: ExtensionContext) {
       setTemperature
     )
   );
+
+  context.subscriptions.push(
+    commands.registerCommand("notebook-chatcompletion.setTopP", setTopP)
+  );
+
+  // n parameter is currently commented out because there's additional work 
+  // in determining it's behavior when combined with stream = true (as long as it's not clear, we don't support it)
+  // context.subscriptions.push(
+  //   commands.registerCommand("notebook-chatcompletion.setN", setN)
+  // );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      "notebook-chatcompletion.setMaxTokens",
+      setMaxTokens
+    )
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      "notebook-chatcompletion.setPresencePenalty",
+      setPresencePenalty
+    )
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      "notebook-chatcompletion.setFrequencyPenalty",
+      setFrequencyPenalty
+    )
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(
+      "notebook-chatcompletion.setLogitBias",
+      setLogitBias
+    )
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand("notebook-chatcompletion.setUser", setUser)
+  );
 }
 
 function getErrorMessage(error: unknown) {
@@ -136,6 +178,31 @@ async function generateCells(args: any, completionType: CompletionType) {
       }
     }
   );
+}
+
+async function setTopP() {
+  const editor = window.activeNotebookEditor!;
+  const topP = await window.showInputBox({
+    prompt: "Enter the Top P value (0-1):",
+    validateInput: (value) =>
+      parseFloat(value) >= 0 && parseFloat(value) <= 1
+        ? null
+        : "Top P must be between 0 and 1",
+  });
+
+  if (topP) {
+    const edit = new WorkspaceEdit();
+    edit.set(editor.notebook.uri, [
+      NotebookEdit.updateNotebookMetadata({
+        custom: {
+          ...editor.notebook.metadata.custom,
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          top_p: parseFloat(topP),
+        },
+      }),
+    ]);
+    await workspace.applyEdit(edit);
+  }
 }
 
 async function setModel() {
@@ -224,4 +291,150 @@ async function setRoleSystem() {
     }),
   ]);
   await workspace.applyEdit(edit);
+}
+
+async function setN() {
+  const editor = window.activeNotebookEditor!;
+  const n = await window.showInputBox({
+    prompt: "Enter the N value (integer):",
+    validateInput: (value) =>
+      parseInt(value) > 0 ? null : "N must be a positive integer",
+  });
+
+  if (n) {
+    const edit = new WorkspaceEdit();
+    edit.set(editor.notebook.uri, [
+      NotebookEdit.updateNotebookMetadata({
+        custom: {
+          ...editor.notebook.metadata.custom,
+          n: parseInt(n),
+        },
+      }),
+    ]);
+    await workspace.applyEdit(edit);
+  }
+}
+
+async function setMaxTokens() {
+  const editor = window.activeNotebookEditor!;
+  const maxTokens = await window.showInputBox({
+    prompt: "Enter the Max Tokens value (integer):",
+    validateInput: (value) =>
+      parseInt(value) > 0 ? null : "Max Tokens must be a positive integer",
+  });
+
+  if (maxTokens) {
+    const edit = new WorkspaceEdit();
+    edit.set(editor.notebook.uri, [
+      NotebookEdit.updateNotebookMetadata({
+        custom: {
+          ...editor.notebook.metadata.custom,
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          max_tokens: parseInt(maxTokens),
+        },
+      }),
+    ]);
+    await workspace.applyEdit(edit);
+  }
+}
+
+async function setPresencePenalty() {
+  const editor = window.activeNotebookEditor!;
+  const presencePenalty = await window.showInputBox({
+    prompt: "Enter the Presence Penalty value (0-1):",
+    validateInput: (value) =>
+      parseFloat(value) >= 0 && parseFloat(value) <= 1
+        ? null
+        : "Presence Penalty must be between 0 and 1",
+  });
+
+  if (presencePenalty) {
+    const edit = new WorkspaceEdit();
+    edit.set(editor.notebook.uri, [
+      NotebookEdit.updateNotebookMetadata({
+        custom: {
+          ...editor.notebook.metadata.custom,
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          presence_penalty: parseFloat(presencePenalty),
+        },
+      }),
+    ]);
+    await workspace.applyEdit(edit);
+  }
+}
+
+async function setFrequencyPenalty() {
+  const editor = window.activeNotebookEditor!;
+  const frequencyPenalty = await window.showInputBox({
+    prompt: "Enter the Frequency Penalty value (0-1):",
+    validateInput: (value) =>
+      parseFloat(value) >= 0 && parseFloat(value) <= 1
+        ? null
+        : "Frequency Penalty must be between 0 and 1",
+  });
+
+  if (frequencyPenalty) {
+    const edit = new WorkspaceEdit();
+    edit.set(editor.notebook.uri, [
+      NotebookEdit.updateNotebookMetadata({
+        custom: {
+          ...editor.notebook.metadata.custom,
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          frequency_penalty: parseFloat(frequencyPenalty),
+        },
+      }),
+    ]);
+    await workspace.applyEdit(edit);
+  }
+}
+
+async function setLogitBias() {
+  const editor = window.activeNotebookEditor!;
+  const logitBias = await window.showInputBox({
+    prompt: "Enter the Logit Bias value (JSON object):",
+    validateInput: (value) => {
+      try {
+        JSON.parse(value);
+        return null;
+      } catch (error) {
+        return "Logit Bias must be a valid JSON object";
+      }
+    },
+  });
+
+  if (logitBias) {
+    const edit = new WorkspaceEdit();
+    edit.set(editor.notebook.uri, [
+      NotebookEdit.updateNotebookMetadata({
+        custom: {
+          ...editor.notebook.metadata.custom,
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          logit_bias: JSON.parse(logitBias),
+        },
+      }),
+    ]);
+    await workspace.applyEdit(edit);
+  }
+}
+
+async function setUser() {
+  const editor = window.activeNotebookEditor!;
+  const user = await window.showInputBox({
+    prompt: "Enter the User value (string):",
+    validateInput: (value) =>
+      value.trim().length > 0 ? null : "User value cannot be empty",
+  });
+
+  if (user) {
+    const edit = new WorkspaceEdit();
+    edit.set(editor.notebook.uri, [
+      NotebookEdit.updateNotebookMetadata({
+        custom: {
+          ...editor.notebook.metadata.custom,
+          user: user,
+        },
+      }),
+    ]);
+    await workspace.applyEdit(edit);
+  }
 }

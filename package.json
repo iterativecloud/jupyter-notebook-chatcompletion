@@ -37,13 +37,48 @@
       },
       {
         "command": "notebook-chatcompletion.setRoleAssistant",
-        "title": "Set Role to Assistant",
+        "title": "Set Chat Role to Assistant",
         "icon": "$(hubot)"
       },
       {
         "command": "notebook-chatcompletion.setRoleSystem",
-        "title": "Set Role to System",
+        "title": "Set Chat Role to System",
         "icon": "$(milestone)"
+      },
+      {
+        "command": "notebook-chatcompletion.setTopP",
+        "title": "Set Top P Parameter",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "notebook-chatcompletion.setN",
+        "title": "Set N Parameter",
+        "icon": "$(list-numbered)"
+      },
+      {
+        "command": "notebook-chatcompletion.setMaxTokens",
+        "title": "Set Max Tokens Parameter",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "notebook-chatcompletion.setPresencePenalty",
+        "title": "Set Presence Penalty Parameter",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "notebook-chatcompletion.setFrequencyPenalty",
+        "title": "Set Frequency Penalty Parameter",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "notebook-chatcompletion.setLogitBias",
+        "title": "Set Logit Bias Parameter",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "notebook-chatcompletion.setUser",
+        "title": "Set User Parameter",
+        "icon": "$(person)"
       }
     ],
     "keybindings": [
@@ -67,6 +102,24 @@
         {
           "command": "notebook-chatcompletion.setModel",
           "group": "navigation@1"
+        },
+        {
+          "command": "notebook-chatcompletion.setTopP"
+        },
+        {
+          "command": "notebook-chatcompletion.setMaxTokens"
+        },
+        {
+          "command": "notebook-chatcompletion.setPresencePenalty"
+        },
+        {
+          "command": "notebook-chatcompletion.setFrequencyPenalty"
+        },
+        {
+          "command": "notebook-chatcompletion.setLogitBias"
+        },
+        {
+          "command": "notebook-chatcompletion.setUser"
         }
       ],
       "notebook/cell/title": [
@@ -79,12 +132,10 @@
           "group": "inline"
         },
         {
-          "command": "notebook-chatcompletion.setRoleAssistant",
-          "group": "inline"
+          "command": "notebook-chatcompletion.setRoleAssistant"
         },
         {
-          "command": "notebook-chatcompletion.setRoleSystem",
-          "group": "inline"
+          "command": "notebook-chatcompletion.setRoleSystem"
         }
       ]
     },

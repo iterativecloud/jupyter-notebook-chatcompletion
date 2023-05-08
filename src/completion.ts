@@ -1,5 +1,5 @@
 import axios from "axios";
-import { Configuration, OpenAIApi } from "openai";
+import { Configuration, CreateChatCompletionRequest, OpenAIApi } from "openai";
 import {
   CancellationToken,
   ConfigurationTarget,
@@ -35,9 +35,6 @@ export async function generateCompletion(
   previousFinishReason: FinishReason
 ): Promise<FinishReason> {
   const editor = window.activeNotebookEditor!;
-  const notebookMetadata = editor.notebook.metadata.custom;
-  const temperature = notebookMetadata?.temperature ?? 0;
-  const model = notebookMetadata?.model ?? "gpt-4";
 
   const messages = await convertCellsToMessages(cellIndex, completionType);
   let currentKind: NotebookCellKind | undefined = undefined;
@@ -75,12 +72,69 @@ export async function generateCompletion(
   const tokenSource = axios.CancelToken.source();
   token.onCancellationRequested(() => tokenSource.cancel());
 
-  const requestParams = {
+  const notebookMetadata = editor.notebook.metadata.custom;
+
+  // Model and temperature are the only parameters we define defaults for.
+  // Otherwise, everything else is left untouched if not defined
+  const model = notebookMetadata?.model ?? "gpt-4";
+  const temperature = notebookMetadata?.temperature ?? 0;
+
+  let requestParams: CreateChatCompletionRequest = {
     model: model,
     messages,
     stream: true,
     temperature: temperature,
   };
+
+  if (notebookMetadata) {
+    if (editor.notebook.metadata.custom?.top_p) {
+      requestParams = {
+        ...requestParams,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        top_p: editor.notebook.metadata.custom.top_p,
+      };
+    }
+    if (editor.notebook.metadata.custom?.n) {
+      requestParams = {
+        ...requestParams,
+        n: editor.notebook.metadata.custom.n,
+      };
+    }
+    if (editor.notebook.metadata.custom?.max_tokens) {
+      requestParams = {
+        ...requestParams,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        max_tokens: editor.notebook.metadata.custom.max_tokens,
+      };
+    }
+    if (editor.notebook.metadata.custom?.presence_penalty) {
+      requestParams = {
+        ...requestParams,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        presence_penalty: editor.notebook.metadata.custom.presence_penalty,
+      };
+    }
+    if (editor.notebook.metadata.custom?.frequency_penalty) {
+      requestParams = {
+        ...requestParams,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        frequency_penalty: editor.notebook.metadata.custom.frequency_penalty,
+      };
+    }
+    if (editor.notebook.metadata.custom?.logit_bias) {
+      requestParams = {
+        ...requestParams,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        logit_bias: editor.notebook.metadata.custom.logit_bias,
+      };
+    }
+    if (editor.notebook.metadata.custom?.user) {
+      requestParams = {
+        ...requestParams,
+        user: editor.notebook.metadata.custom.top_p,
+      };
+    }
+  }
 
   output.appendLine("\n" + JSON.stringify(requestParams, undefined, 2) + "\n");
   progress.report({ increment: 1, message: SENDING_COMPLETION_REQUEST });
