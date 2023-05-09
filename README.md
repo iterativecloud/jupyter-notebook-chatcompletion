@@ -1,71 +1,64 @@
-# jupyter-interactive-notebook-editing README
+# 💬 Jupyter Notebook ChatCompletion for VSCode
 
-This is the README for your extension "jupyter-interactive-notebook-editing". After writing up a brief description, we recommend including the following sections.
+Jupyter Notebook ChatCompletion is VSCode extension that brings the power of OpenAI's ChatCompletion API to your Jupyter Notebooks!
 
-## Features
+With this extension, you can generate completions for your code cells, making it easier than ever to experiment with different models and parameters. The best part? The completions are streamed, so you can cancel them at any time! 
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+Plus, you can optionally send cell outputs and VSCode problems detected on the cell as part of the prompt to the ChatCompletion API, giving you even more control over your completions.
 
-For example if there is an image subfolder under your extension project workspace:
+Choosing the GPT-4 model with 8k or 32k tokens is recommended, as most Jupyter Notebook out there will completely fit in the prompt, including the output of executed cells. For those without OpenAI preview access, GPT-3.5-turbo will also work decently, but you will quickly reach the maximum size of a request.
 
-\!\[feature X\]\(images/feature-x.png\)
+## 🎉 Embrace the Future of Jupyter Notebook Completions 
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+Get ready to supercharge your Jupyter Notebook experience with the Jupyter Notebook ChatCompletion extension for VSCode! Say goodbye to copy-pasting content between IDE and ChatGPT/OpenAI Playground!
 
-## Requirements
+## 🌟 Features 
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+- Streamed completions: Generate completions and see the first results on-the-fly.
+- Cancel early: Don't like what you see? You can cancel an ongoing completion at any time.
+- Send Jupyter notebook cell outputs and VSCode problems to the ChatCompletion API for better context-aware completions.
+- Store API parameters within the notebook instead of the workspace, making side-by-side experimentations easier and more reproducible.
+- Customize your completions with various API parameters, including temperature, top_p, max tokens, and more.
+- Manage Chat roles: set a notebook cell to the  System or Assistant role, giving you the same level of control as in the OpenAI Playground.
 
-## Extension Settings
+## 🚀 Getting Started 
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+1. Install the Jupyter Notebook ChatCompletion extension from the VSCode marketplace.
+2. Open a Jupyter Notebook in VSCode.
+3. Start generating completions for your code cells using the extension commands!
 
-For example:
+## 🎮 Commands 
 
-This extension contributes the following settings:
+- **Complete with this Cell and Above** (`ctrl+shift+enter`): Generate completions using the current cell and all cells above it.
+- **Complete with this Cell** (`ctrl+shift+pagedown`): Generate completions using only the current cell.
+- **Set Temperature**: Adjust the temperature parameter for controlling the randomness of the completions.
+- **Set Model**: Choose the OpenAI model to use for generating completions.
+- **Set Chat Role to Assistant**: Set the role of the current cell to "assistant".
+- **Set Chat Role to System**: Set the role of the current cell to "system".
+- **Set Top P Parameter**: Set the `top_p` parameter for nucleus sampling, where the model considers the results of the tokens with top_p probability mass (e.g., 0.1 means only the tokens comprising the top 10% probability mass are considered).
+- **Set Max Tokens Parameter**: Set the `max_tokens` parameter to limit the maximum number of tokens generated in the chat completion.
+- **Set Presence Penalty Parameter**: Set the `presence_penalty` parameter to penalize new tokens based on whether they appear in the text so far, influencing the model's likelihood to talk about new topics.
+- **Set Frequency Penalty Parameter**: Set the `frequency_penalty` parameter to penalize new tokens based on their existing frequency in the text so far, decreasing the model's likelihood to repeat the same line verbatim.
+- **Set Logit Bias Parameter**: Set the `logit_bias` parameter to modify the likelihood of specified tokens appearing in the completion by providing a JSON object that maps tokens to their associated bias values.
+- **Set User Parameter**: Set the `user` parameter to provide a unique identifier representing your end-user, which can help OpenAI monitor and detect abuse.
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+## ⚙️ Configuration 
 
-## Known Issues
+To use the extension, you'll need to provide your OpenAI API Key. You can do this by setting the `notebook-chatcompletion.openaiApiKey` configuration property in your VSCode settings. You will also be prompted for the API key on first use if it hasn't been defined yet.
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+## 🏄 Full freedom
+In stark constrast to existing GPT-related VSCode extensions, extra care was taken to not steer the completion in any way that might conflict with the intent of your notebook. You can therefore expect the same level of flexibility as with the OpenAI Playground, but combined with the powerful features of Jupyter notebooks.
 
-## Release Notes
+This extension will only include the following system message by default: 
+"```Format your answer as markdown. If you include a markdown code block, specify the language.```"
+This default system message increases the chance that the extension will detect python code as code cell instead of generic code-block (unknown language). You can set a notebook to the role "System" to define your own system message.
 
-Users appreciate release notes as you update your extension.
+If you want an experience closer to ChatGPT, you can try setting the system message to: "```You are ChatGPT, a large language model trained by OpenAI. Answer as concisely as possible. Knowledge cutoff: {knowledge_cutoff} Current date: {current_date}```"
 
-### 1.0.0
+## 🛠 Support
 
-Initial release of ...
+If you encounter any issues or have questions, please head over to [GitHub Issues](https://github.com/iterativecloud/jupyter-notebook-chatcompletion/issues/new) page and create a new issue. I'll be happy to help!
 
-### 1.0.1
+## 🌈 Upcoming
 
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+I am working to improve the Jupyter Notebook ChatCompletion extension. Some of the next exciting features I am working towards are **Automatic truncation when reaching max token limit**, **Polyglot Notebook support** and supporting locally run **HuggingFace LLM models**. Stay tuned for more updates and enhancements!
