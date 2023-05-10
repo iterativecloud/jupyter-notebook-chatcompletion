@@ -8,10 +8,6 @@ Plus, you can optionally send cell outputs and VSCode problems detected on the c
 
 Choosing the GPT-4 model with 8k or 32k tokens is recommended, as most Jupyter Notebook out there will completely fit in the prompt, including the output of executed cells. For those without OpenAI preview access, GPT-3.5-turbo will also work decently, but you will quickly reach the maximum size of a request.
 
-## 🎉 Embrace the Future of Jupyter Notebook Completions 
-
-Get ready to supercharge your Jupyter Notebook experience with the Jupyter Notebook ChatCompletion extension for VSCode! Say goodbye to copy-pasting content between IDE and ChatGPT/OpenAI Playground!
-
 ## 🌟 Features 
 
 - Streamed completions: Generate completions and see the first results on-the-fly.
