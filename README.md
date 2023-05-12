@@ -4,9 +4,9 @@ Jupyter Notebook ChatCompletion is VSCode extension that brings the power of Ope
 
 With this extension, you can generate completions for your code cells, making it easier than ever to experiment with different models and parameters. The best part? The completions are streamed, so you can cancel them at any time! 
 
-Plus, you can optionally send cell outputs and VSCode problems detected on the cell as part of the prompt to the ChatCompletion API, giving you even more control over your completions.
+Plus, you can optionally send cell outputs and VSCode problems detected on the cell as part of the prompt to the ChatCompletion API, giving you even more ways to add context to your notebook cell generation.
 
-Choosing the GPT-4 model with 8k or 32k tokens is recommended, as most Jupyter Notebook out there will completely fit in the prompt, including the output of executed cells. For those without OpenAI preview access, GPT-3.5-turbo will also work decently, but you will quickly reach the maximum size of a request.
+![](https://github.com/iterativecloud/jupyter-notebook-chatcompletion/blob/edge/demo.gif)
 
 ## 🌟 Features 
 
