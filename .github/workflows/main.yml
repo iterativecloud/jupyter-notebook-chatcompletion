@@ -80,7 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download Artifact
-        uses: actions/download-artifact@v2.1.3
+        uses: actions/download-artifact@v2.1.2
         with:
           name: extension
       - name: Publish to Visual Studio Marketplace
