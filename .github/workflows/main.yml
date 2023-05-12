@@ -84,12 +84,7 @@ jobs:
         with:
           name: extension
       - name: Publish to Visual Studio Marketplace
-        run: |
-          if [ "${{ github.event.inputs.releaseChannel }}" == "edge" ]; then
-            npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }} "${{ github.event.inputs.releaseType }}"
-          else
-            npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }} "${{ github.event.inputs.releaseType }}"
-          fi
+        run: npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }}
       # - name: Commit and push updated package.json
       #   run: |
       #     git config --global user.name "GitHub Actions"
