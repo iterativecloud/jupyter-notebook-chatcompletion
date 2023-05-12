@@ -60,15 +60,15 @@ jobs:
             ${{ runner.os }}-npm-
       - name: Install dependencies
         run: npm ci
-      - name: Build Package
-        run: npm run vscode:prepublish
+      # - name: Build Package
+      #   run: npm run vscode:prepublish
 #       - name: Run Tests
 #         uses: GabrielBB/xvfb-action@v1.4
 #         with:
 #           run: npm test
 #           options: "-screen 0 1600x1200x24"
       - name: Package Extension
-        run: npx vsce package -o "./extension.vsix"
+        run: npx vsce package -o "./extension.vsix" --pre-release
       - name: Upload Artifact
         uses: actions/upload-artifact@v3
         with:
@@ -86,9 +86,9 @@ jobs:
       - name: Publish to Visual Studio Marketplace
         run: |
           if [ "${{ github.event.inputs.releaseChannel }}" == "edge" ]; then
-            npx vsce publish --pre-release --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }} --tag next --increment "${{ github.event.inputs.releaseType }}"
+            npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }} --pre-release "${{ github.event.inputs.releaseType }}"
           else
-            npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }} --increment "${{ github.event.inputs.releaseType }}"
+            npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }} "${{ github.event.inputs.releaseType }}"
           fi
       # - name: Commit and push updated package.json
       #   run: |
