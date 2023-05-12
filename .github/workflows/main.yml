@@ -44,15 +44,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Clone Repository
-        uses: actions/checkout@v3.5.2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
       - name: Setup Node version
-        uses: actions/setup-node@v3.4.1
+        uses: actions/setup-node@v3
         with:
           node-version: 16
       - name: Cache dependencies
-        uses: actions/cache@v3.2.6
+        uses: actions/cache@v3
         with:
           path: ~/.npm
           key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
@@ -70,7 +70,7 @@ jobs:
       - name: Package Extension
         run: npx vsce package -o "./extension.vsix"
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v3
         with:
           name: extension
           path: ./extension.vsix
@@ -80,7 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download Artifact
-        uses: actions/download-artifact@v2.1.2
+        uses: actions/download-artifact@v2
         with:
           name: extension
       - name: Publish to Visual Studio Marketplace
