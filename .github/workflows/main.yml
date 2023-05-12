@@ -86,7 +86,7 @@ jobs:
       - name: Publish to Visual Studio Marketplace
         run: |
           if [ "${{ github.event.inputs.releaseChannel }}" == "edge" ]; then
-            npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }} --pre-release "${{ github.event.inputs.releaseType }}"
+            npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }} "${{ github.event.inputs.releaseType }}"
           else
             npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }} "${{ github.event.inputs.releaseType }}"
           fi
