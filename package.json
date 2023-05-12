@@ -10,9 +10,6 @@
   "bugs": {
     "url": "https://github.com/iterativecloud/jupyter-notebook-chatcompletion/issues/new"
   },
-  "extensionKind": [
-    "ui"
-  ],
   "icon": "jupyter-extension-logo-128.png",
   "homepage": "https://www.iterative.cloud",
   "license": "MIT",
