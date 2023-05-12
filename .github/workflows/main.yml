@@ -6,7 +6,7 @@ on:
         description: "Release Channel"
         required: true
         type: choice
-        default: stable
+        default: edge
         options:
           - stable
           - edge
@@ -49,21 +49,11 @@ jobs:
       - name: Package Extension (stable)
         if: inputs.releaseChannel == 'stable'
         run: npx vsce package -o "./extension.vsix"
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: extension
-          path: ./extension.vsix
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Artifact
-        uses: actions/download-artifact@v2
-        with:
-          name: extension
+      - name: Publish to Visual Studio Marketplace as Pre-Release
+        if: inputs.releaseChannel == 'edge'
+        run: npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }}  --pre-release
       - name: Publish to Visual Studio Marketplace
+        if: inputs.releaseChannel == 'stable'
         run: npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }}
       - name: Commit and push updated package.json
         run: |
