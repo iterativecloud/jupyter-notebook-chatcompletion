@@ -2,15 +2,6 @@ name: Publish
 on:
   workflow_dispatch:
     inputs:
-      releaseType:
-        description: "Release Type"
-        required: true
-        type: choice
-        default: "patch"
-        options:
-          - patch
-          - minor
-          - major
       releaseChannel:
         description: "Release Channel"
         required: true
@@ -19,14 +10,6 @@ on:
         options:
           - stable
           - edge
-      publishMarketplace:
-        description: "Publish on Visual Studio Marketplace?"
-        required: true
-        type: choice
-        default: "yes"
-        options:
-          - "yes"
-          - "no"
   # push:
   #   branches:
   #     - main
@@ -61,10 +44,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Package Extension (pre-release)
-        if: inputs.releaseType == 'edge'
+        if: inputs.releaseChannel == 'edge'
         run: npx vsce package -o "./extension.vsix" --pre-release
       - name: Package Extension (stable)
-        if: inputs.releaseType == 'stable'
+        if: inputs.releaseChannel == 'stable'
         run: npx vsce package -o "./extension.vsix"
       - name: Upload Artifact
         uses: actions/upload-artifact@v3
