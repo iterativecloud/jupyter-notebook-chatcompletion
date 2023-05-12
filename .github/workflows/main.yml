@@ -5,7 +5,6 @@ on:
       - main
       - edge
     paths-ignore:
-      - '**.md'
       - 'test/**'
       - '.vscode/**'
       - '.gitignore'
