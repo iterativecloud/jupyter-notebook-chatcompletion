@@ -6,7 +6,7 @@ With this extension, you can generate completions for your code cells, making it
 
 Plus, you can optionally send cell outputs and VSCode problems detected on the cell as part of the prompt to the ChatCompletion API, giving you even more ways to add context to your notebook cell generation.
 
-![](https://github.com/iterativecloud/jupyter-notebook-chatcompletion/blob/edge/demo.gif)
+![](https://github.com/iterativecloud/jupyter-notebook-chatcompletion/blob/main/demo.gif?raw=true)
 
 ## 🌟 Features 
 
