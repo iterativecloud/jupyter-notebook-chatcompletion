@@ -43,18 +43,12 @@ jobs:
             ${{ runner.os }}-npm-
       - name: Install dependencies
         run: npm ci
-      - name: Package Extension (pre-release)
-        if: inputs.releaseChannel == 'edge'
-        run: npx vsce package -o "./extension.vsix" --pre-release
-      - name: Package Extension (stable)
-        if: inputs.releaseChannel == 'stable'
-        run: npx vsce package -o "./extension.vsix"
       - name: Publish to Visual Studio Marketplace as Pre-Release
         if: inputs.releaseChannel == 'edge'
-        run: npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }} --pre-release patch
+        run: npx vsce publish -p ${{ secrets.VSC_MKTP_PAT }} --pre-release patch
       - name: Publish to Visual Studio Marketplace
         if: inputs.releaseChannel == 'stable'
-        run: npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }}  patch
+        run: npx vsce publish -p ${{ secrets.VSC_MKTP_PAT }}  patch
       - name: Commit and push updated package.json
         run: |
           git config --global user.name "GitHub Actions"
