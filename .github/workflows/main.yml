@@ -46,4 +46,5 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: npx vsce publish -p ${{ secrets.VSC_MKTP_PAT }}
       - name: Push updates made by vsce publish
+        if: github.ref == 'refs/heads/edge'
         run: git push
