@@ -13,10 +13,7 @@
   "extensionKind": [
     "ui"
   ],
-  "galleryBanner": {
-    "color": "#C80000",
-    "theme": "dark"
-  },
+  "icon": "jupyter-extension-logo-128.png",
   "homepage": "https://www.iterative.cloud",
   "license": "MIT",
   "markdown": "github",
