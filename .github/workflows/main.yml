@@ -44,6 +44,6 @@ jobs:
         run: npx vsce publish -p ${{ secrets.VSC_MKTP_PAT }} --pre-release patch
       - name: Publish to Visual Studio Marketplace
         if: github.ref == 'refs/heads/main'
-        run: npx vsce publish -p ${{ secrets.VSC_MKTP_PAT }} patch
+        run: npx vsce publish -p ${{ secrets.VSC_MKTP_PAT }}
       - name: Push updates made by vsce publish
         run: git push
