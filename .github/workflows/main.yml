@@ -60,15 +60,12 @@ jobs:
             ${{ runner.os }}-npm-
       - name: Install dependencies
         run: npm ci
-      # - name: Build Package
-      #   run: npm run vscode:prepublish
-#       - name: Run Tests
-#         uses: GabrielBB/xvfb-action@v1.4
-#         with:
-#           run: npm test
-#           options: "-screen 0 1600x1200x24"
-      - name: Package Extension
+      - name: Package Extension (pre-release)
+        if: inputs.releaseType == 'edge'
         run: npx vsce package -o "./extension.vsix" --pre-release
+      - name: Package Extension (stable)
+        if: inputs.releaseType == 'stable'
+        run: npx vsce package -o "./extension.vsix"
       - name: Upload Artifact
         uses: actions/upload-artifact@v3
         with:
@@ -85,10 +82,10 @@ jobs:
           name: extension
       - name: Publish to Visual Studio Marketplace
         run: npx vsce publish --packagePath "./extension.vsix" -p ${{ secrets.VSC_MKTP_PAT }}
-      # - name: Commit and push updated package.json
-      #   run: |
-      #     git config --global user.name "GitHub Actions"
-      #     git config --global user.email "actions@github.com"
-      #     git add package.json
-      #     git commit -m "Update package.json version"
-      #     git push
+      - name: Commit and push updated package.json
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add package.json
+          git commit -m "update package.json version"
+          git push
