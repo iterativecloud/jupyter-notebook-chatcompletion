@@ -52,8 +52,5 @@ jobs:
       - name: Publish to Visual Studio Marketplace
         if: inputs.releaseChannel == 'stable'
         run: npx vsce publish -p ${{ secrets.VSC_MKTP_PAT }}  patch
-      - name: Commit and push updated package.json
-        run: |
-          git add package.json
-          git commit -m "update package.json version"
-          git push
+      - name: Push updates made by vsce publish
+        run: git push
