@@ -222,8 +222,11 @@ export async function generateCompletion(
     progress.report({ increment: 0.5, message: RECEIVING_TOKENS });
   }
 
-  // We came to the end of the string without ever receiving a FinishReason from the API (or we have a bug). This is an invalid state.
-  throw new Error("Reached end of stream before receiving stop_reason");
+  // We came to the end of the string without ever receiving a FinishReason from the API (or we have a bug).
+  // Especially when the API interrupts inbetween code and the server-side max token limit is reached, this may happen.
+  // When the client-side max token limit is reached, we usually get an appropriate FinishReason.
+  // We therefore interpret the behavior as Finish Reason Length.
+  return FinishReason.length;
 }
 
 async function getOpenAIApiKey(): Promise<string> {
