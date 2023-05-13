@@ -60,7 +60,7 @@ export async function activate(context: ExtensionContext) {
     commands.registerCommand("notebook-chatcompletion.setTopP", setTopP)
   );
 
-  // n parameter is currently commented out because there's additional work 
+  // n parameter is currently commented out because there's additional work
   // in determining it's behavior when combined with stream = true (as long as it's not clear, we don't support it)
   // context.subscriptions.push(
   //   commands.registerCommand("notebook-chatcompletion.setN", setN)
@@ -154,7 +154,7 @@ async function generateCells(args: any, completionType: CompletionType) {
           case FinishReason.contentFilter:
             // report content policy violation
             window.showErrorMessage(
-              "API finished early due to content policy violation"
+              "OpenAI API finished early due to content policy violation"
             );
             progress.report({ increment: 100 });
             break;
@@ -164,17 +164,47 @@ async function generateCells(args: any, completionType: CompletionType) {
         }
       } catch (error: any) {
         if (error instanceof axios.Cancel) {
-          // report cancellation
           window.showInformationMessage(
             `${COMPLETION_CANCELLED}: ${error.message}`
           );
-        } else {
-          // report error
-          window.showErrorMessage(`${COMPLETION_FAILED}: ${error.message}`, {
-            detail: getErrorMessage(error),
-            modal: true,
-          });
+          return;
         }
+
+        let detail = "";
+
+        if (!error.response) {
+          detail = getErrorMessage(error);
+        } else {
+          switch (error.response.status) {
+            case 400:
+              detail =
+                "The OpenAI API may return this error when the request goes over the max token limit\n";
+              break;
+            case 401:
+              detail =
+                "Ensure the correct OpenAI API key and requesting organization are being used.\n";
+              break;
+            case 404:
+              detail =
+                "The OpenAI endpoint is not found or the requested model is not available.\n";
+              break;
+            case 429:
+              detail =
+                "OpenAI Rate limit reached for requests, or you exceeded your current quota or the engine is currently overloaded.\n";
+              break;
+            case 500:
+              detail =
+                "The OpenAI server had an error while processing your request.\n";
+              break;
+          }
+        }
+
+        detail += getErrorMessage(error);
+
+        window.showErrorMessage(`${COMPLETION_FAILED}: ${error.message}`, {
+          detail,
+          modal: true,
+        });
       }
     }
   );
