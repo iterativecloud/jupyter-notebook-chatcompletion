@@ -60,7 +60,11 @@ export async function generateCompletion(
 
   // Model and temperature are the only parameters we define defaults for.
   // Otherwise, everything else is left untouched if not defined
-  const model = notebookMetadata?.model ?? "gpt-4";
+  const defaultModel = workspace
+    .getConfiguration()
+    .get<string>("notebook-chatcompletion.defaultModel");
+
+  const model = notebookMetadata?.model ?? defaultModel;
   const temperature = notebookMetadata?.temperature ?? 0;
 
   const enc = encoding_for_model(model);
@@ -291,10 +295,16 @@ async function getOpenAIApiKey(): Promise<string> {
           openaiApiKey,
           ConfigurationTarget.Global
         );
+
+      await window.showInformationMessage(
+        "Please note that the model is set to GPT-4 by default, which you may not be able to access yet. As a result, the API may return an HTTP 404 error. You can change the 'Default Model' setting to another model or use the 'Set Model' command in the menu to set the model for a specific notebook.",
+        { modal: true }
+      );
     } else {
       // If the user didn't provide an API key, show an error message and return
       window.showErrorMessage(
-        "OpenAI API Key is required for Notebook ChatCompletion to work."
+        "OpenAI API Key is required for Notebook ChatCompletion to work.",
+        { modal: true }
       );
       return "";
     }
