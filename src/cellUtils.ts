@@ -128,31 +128,7 @@ export async function convertCellsToMessages(
       return { cell, problems, nonImgOutputs };
     });
 
-  const addProblemsOption = `Add Problems (${cellInfos.reduce(
-    (a, c) => a + c.problems.length,
-    0
-  )})`;
-  const addOutputsOption = `Add Outputs (${cellInfos.reduce(
-    (a, c) => a + c.nonImgOutputs.length,
-    0
-  )})`;
-
-  const options = cellInfos.some((c) => c.problems.length)
-    ? [addProblemsOption]
-    : [];
-
-  if (cellInfos.some((c) => c.nonImgOutputs.length)) {
-    options.push(addOutputsOption);
-  }
-
   var messages: ChatCompletionRequestMessage[] = [];
-  const selectedOptions =
-    options.length > 0
-      ? await window.showQuickPick(options, {
-          placeHolder: ADDITIONAL_PROMPT_INFO_MESSAGE,
-          canPickMany: true,
-        })
-      : [];
 
   cellInfos.forEach(({ cell, problems, nonImgOutputs }) => {
     let role: ChatCompletionRequestMessageRoleEnum =
@@ -165,10 +141,7 @@ export async function convertCellsToMessages(
 
     messages.push({ role: role, content: cell.document.getText() });
 
-    if (
-      problems.length &&
-      selectedOptions?.some((x) => x.includes(addProblemsOption))
-    ) {
+    if (problems.length > 0) {
       messages.push({
         role: role ?? "user",
         content:
@@ -177,10 +150,7 @@ export async function convertCellsToMessages(
       });
     }
 
-    if (
-      nonImgOutputs.length &&
-      selectedOptions?.some((x) => x.includes(addOutputsOption))
-    ) {
+    if (nonImgOutputs.length) {
       nonImgOutputs.forEach((output) =>
         messages.push({
           role: role ?? "user",
