@@ -12,6 +12,7 @@ import {
 import { generateCompletion } from "./completion";
 import { CompletionType } from "./completionType";
 import { FinishReason } from "./finishReason";
+import { IncomingMessage } from "http";
 
 const GENERATING_NEXT_CELL = "Generating next cell(s)...";
 const COMPLETION_COMPLETED = "Cell generation completed";
@@ -128,29 +129,30 @@ async function generateCells(args: any, completionType: CompletionType) {
       try {
         let finishReason = FinishReason.null;
 
-        while (
-          finishReason === FinishReason.null ||
-          finishReason === FinishReason.length
-        ) {
-          finishReason = await generateCompletion(
-            cellIndex,
-            completionType,
-            progress,
-            token,
-            finishReason
-          );
-        }
+        finishReason = await generateCompletion(
+          cellIndex,
+          completionType,
+          progress,
+          token,
+          finishReason
+        );
 
         // we are done editing any cell, so we close edit mode
         await commands.executeCommand("notebook.cell.quitEdit");
 
         switch (finishReason) {
+          case FinishReason.length:
           case FinishReason.stop:
             // report success
             window.showInformationMessage(COMPLETION_COMPLETED);
             progress.report({ increment: 100 });
             break;
 
+          case FinishReason.cancelled:
+            // report cancellation
+            window.showInformationMessage(COMPLETION_CANCELLED);
+            progress.report({ increment: 100 });
+            break;
           case FinishReason.contentFilter:
             // report content policy violation
             window.showErrorMessage(
@@ -186,7 +188,7 @@ async function generateCells(args: any, completionType: CompletionType) {
               break;
             case 404:
               detail =
-                "The OpenAI endpoint is not found or the requested model is not available.\n";
+                "The OpenAI endpoint is not found or the requested model is unknown or not available to your account.\n";
               break;
             case 429:
               detail =

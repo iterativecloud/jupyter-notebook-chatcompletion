@@ -1,10 +1,16 @@
 import axios from "axios";
-import { Configuration, CreateChatCompletionRequest, OpenAIApi } from "openai";
+import {
+  ChatCompletionRequestMessage,
+  Configuration,
+  CreateChatCompletionRequest,
+  OpenAIApi,
+} from "openai";
 import {
   CancellationToken,
   ConfigurationTarget,
   NotebookCellKind,
   NotebookEdit,
+  NotebookEditor,
   NotebookRange,
   WorkspaceEdit,
   window,
@@ -19,9 +25,10 @@ import { CompletionType } from "./completionType";
 import { FinishReason } from "./finishReason";
 import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
 import { UIProgress } from "./uiProgress";
+import { get_encoding, encoding_for_model } from "@dqbd/tiktoken";
 
-export const SENDING_COMPLETION_REQUEST = "Sending ChatCompletion request";
-export const RECEIVING_TOKENS = "Receiving tokens...";
+const SENDING_COMPLETION_REQUEST = "Sending ChatCompletion request";
+const RECEIVING_TOKENS = "Receiving tokens...";
 const pythonCodeBlockStart = "```python\n";
 const codeBlockEnd = "```";
 
@@ -35,31 +42,8 @@ export async function generateCompletion(
   previousFinishReason: FinishReason
 ): Promise<FinishReason> {
   const editor = window.activeNotebookEditor!;
-
   const messages = await convertCellsToMessages(cellIndex, completionType);
   let currentKind: NotebookCellKind | undefined = undefined;
-
-  // If the generation was previously interrupted, we need to nudge the prompt
-  // toward continuation without repetition of incomplete text.
-  if (previousFinishReason === FinishReason.length) {
-    // If we see that we previously finished because of length, we assume that the current call is
-    // a continuation of an interrupted completion (max token length), and therefore we
-    // will not create a new cell and append text to the existing one instead
-    let cell = editor.notebook.cellAt(cellIndex);
-    currentKind = cell.kind;
-
-    // This is a workaround because normally we persist the role as cell metadata.
-    // However, we cannot read directly the metadata directly after write until the cell is out
-    // of edit mode, so we have to manually fix the role of the last cell in order to continue directly.
-    const userMessages = messages.filter((m) => m.role === "user");
-    userMessages[userMessages.length - 1].role = "assistant";
-
-    // we inject an extra message to force continuation without repetition
-    messages.push({
-      role: "user",
-      content: "Continue. Don't repeat any text from your previous message.",
-    });
-  }
 
   const openAIApiKey = await getOpenAIApiKey();
 
@@ -79,62 +63,66 @@ export async function generateCompletion(
   const model = notebookMetadata?.model ?? "gpt-4";
   const temperature = notebookMetadata?.temperature ?? 0;
 
+  const enc = encoding_for_model(model);
+  // for (let i = 0; i < messages.length; i++) {
+  //   const encodedMessage = enc.encode(messages[i].content);
+  //   messages[i].tokenCount = encodedMessage.length;
+  // }
+
+  // const oldtotalTokenCount = messages.reduce(
+  //   (total, message) => total + (message.tokenCount ?? 0),
+  //   0
+  // );
+
+  const msgText = JSON.stringify(messages);
+  const totalTokenCount = enc.encode(msgText).length;
+
+  enc.free();
+
+  let limit: number | null = null;
+
+  switch (model) {
+    case "gpt-4":
+    case "gpt-4-0314":
+      limit = 8192;
+      break;
+
+    case "gpt-4-32k":
+    case "gpt-4-32k-0314":
+      limit = 32768;
+      break;
+
+    case "gpt-3.5-turbo":
+    case "gpt-3.5-turbo-0301":
+      limit = 4096;
+      break;
+
+    default:
+      break;
+  }
+
+  if (limit !== null && totalTokenCount > limit) {
+    const message = `You are sending ${totalTokenCount} tokens, which is ${
+      totalTokenCount - limit
+    } more than the limit of ${limit} for the ${model} model`;
+
+    await window.showInformationMessage(message, { modal: true });
+    return FinishReason.cancelled;
+  }
+
   let requestParams: CreateChatCompletionRequest = {
     model: model,
     messages,
     stream: true,
+    // eslint-disable-next-line @typescript-eslint/naming-convention
     temperature: temperature,
   };
 
-  if (notebookMetadata) {
-    if (editor.notebook.metadata.custom?.top_p) {
-      requestParams = {
-        ...requestParams,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        top_p: editor.notebook.metadata.custom.top_p,
-      };
-    }
-    if (editor.notebook.metadata.custom?.n) {
-      requestParams = {
-        ...requestParams,
-        n: editor.notebook.metadata.custom.n,
-      };
-    }
-    if (editor.notebook.metadata.custom?.max_tokens) {
-      requestParams = {
-        ...requestParams,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        max_tokens: editor.notebook.metadata.custom.max_tokens,
-      };
-    }
-    if (editor.notebook.metadata.custom?.presence_penalty) {
-      requestParams = {
-        ...requestParams,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        presence_penalty: editor.notebook.metadata.custom.presence_penalty,
-      };
-    }
-    if (editor.notebook.metadata.custom?.frequency_penalty) {
-      requestParams = {
-        ...requestParams,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        frequency_penalty: editor.notebook.metadata.custom.frequency_penalty,
-      };
-    }
-    if (editor.notebook.metadata.custom?.logit_bias) {
-      requestParams = {
-        ...requestParams,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        logit_bias: editor.notebook.metadata.custom.logit_bias,
-      };
-    }
-    if (editor.notebook.metadata.custom?.user) {
-      requestParams = {
-        ...requestParams,
-        user: editor.notebook.metadata.custom.top_p,
-      };
-    }
+  if (limit) {
+    requestParams.max_tokens = Math.max(1, limit - totalTokenCount);
   }
+
+  requestParams = addParametersFromMetadata(notebookMetadata, requestParams);
 
   output.appendLine("\n" + JSON.stringify(requestParams, undefined, 2) + "\n");
   progress.report({ increment: 1, message: SENDING_COMPLETION_REQUEST });
@@ -227,6 +215,59 @@ export async function generateCompletion(
   // When the client-side max token limit is reached, we usually get an appropriate FinishReason.
   // We therefore interpret the behavior as Finish Reason Length.
   return FinishReason.length;
+}
+
+function addParametersFromMetadata(
+  notebookMetadata: any,
+  requestParams: CreateChatCompletionRequest
+) {
+  const editor = window.activeNotebookEditor;
+  if (editor && notebookMetadata) {
+    if (editor.notebook.metadata.custom?.top_p) {
+      requestParams = {
+        ...requestParams,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        top_p: editor.notebook.metadata.custom.top_p,
+      };
+    }
+    if (editor.notebook.metadata.custom?.n) {
+      requestParams = {
+        ...requestParams,
+        n: editor.notebook.metadata.custom.n,
+      };
+    }
+    if (editor.notebook.metadata.custom?.max_tokens) {
+      requestParams.max_tokens = editor.notebook.metadata.custom.max_tokens;
+    }
+    if (editor.notebook.metadata.custom?.presence_penalty) {
+      requestParams = {
+        ...requestParams,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        presence_penalty: editor.notebook.metadata.custom.presence_penalty,
+      };
+    }
+    if (editor.notebook.metadata.custom?.frequency_penalty) {
+      requestParams = {
+        ...requestParams,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        frequency_penalty: editor.notebook.metadata.custom.frequency_penalty,
+      };
+    }
+    if (editor.notebook.metadata.custom?.logit_bias) {
+      requestParams = {
+        ...requestParams,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        logit_bias: editor.notebook.metadata.custom.logit_bias,
+      };
+    }
+    if (editor.notebook.metadata.custom?.user) {
+      requestParams = {
+        ...requestParams,
+        user: editor.notebook.metadata.custom.top_p,
+      };
+    }
+  }
+  return requestParams;
 }
 
 async function getOpenAIApiKey(): Promise<string> {
