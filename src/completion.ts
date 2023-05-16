@@ -10,8 +10,8 @@ import {
   ConfigurationTarget,
   NotebookCellKind,
   NotebookEdit,
-  NotebookEditor,
   NotebookRange,
+  QuickPickItem,
   WorkspaceEdit,
   window,
   workspace,
@@ -25,7 +25,8 @@ import { CompletionType } from "./completionType";
 import { FinishReason } from "./finishReason";
 import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
 import { UIProgress } from "./uiProgress";
-import { get_encoding, encoding_for_model } from "@dqbd/tiktoken";
+import { encoding_for_model } from "@dqbd/tiktoken";
+import { QuickPickItemKind } from "vscode";
 
 const SENDING_COMPLETION_REQUEST = "Sending ChatCompletion request";
 const RECEIVING_TOKENS = "Receiving tokens...";
@@ -42,7 +43,7 @@ export async function generateCompletion(
   previousFinishReason: FinishReason
 ): Promise<FinishReason> {
   const editor = window.activeNotebookEditor!;
-  const messages = await convertCellsToMessages(cellIndex, completionType);
+  let messages = await convertCellsToMessages(cellIndex, completionType);
   let currentKind: NotebookCellKind | undefined = undefined;
 
   const openAIApiKey = await getOpenAIApiKey();
@@ -67,22 +68,6 @@ export async function generateCompletion(
   const model = notebookMetadata?.model ?? defaultModel;
   const temperature = notebookMetadata?.temperature ?? 0;
 
-  const enc = encoding_for_model(model);
-  // for (let i = 0; i < messages.length; i++) {
-  //   const encodedMessage = enc.encode(messages[i].content);
-  //   messages[i].tokenCount = encodedMessage.length;
-  // }
-
-  // const oldtotalTokenCount = messages.reduce(
-  //   (total, message) => total + (message.tokenCount ?? 0),
-  //   0
-  // );
-
-  const msgText = JSON.stringify(messages);
-  const totalTokenCount = enc.encode(msgText).length;
-
-  enc.free();
-
   let limit: number | null = null;
 
   switch (model) {
@@ -105,25 +90,53 @@ export async function generateCompletion(
       break;
   }
 
-  if (limit !== null && totalTokenCount > limit) {
-    const message = `You are sending ${totalTokenCount} tokens, which is ${
-      totalTokenCount - limit
-    } more than the limit of ${limit} for the ${model} model`;
+  const msgText = JSON.stringify(messages);
+  const totalTokenCount = countTokens(msgText, model);
 
-    await window.showInformationMessage(message, { modal: true });
-    return FinishReason.cancelled;
+  if (limit !== null && totalTokenCount > limit) {
+    const tokenOverflow = limit - totalTokenCount;
+    // the numbers shown in the token calculations must be based on message content alone
+    const msgText = messages.map((x) => x.content).join();
+    const contentTokenCount = countTokens(msgText, model);
+
+    const reducedMessages = await applyTokenReductionStrategies(
+      messages,
+      tokenOverflow,
+      contentTokenCount,
+      limit,
+      model
+    );
+
+    if (!reducedMessages) {
+      return FinishReason.cancelled;
+    }
+
+    messages = reducedMessages;
   }
 
   let requestParams: CreateChatCompletionRequest = {
     model: model,
     messages,
     stream: true,
-    // eslint-disable-next-line @typescript-eslint/naming-convention
     temperature: temperature,
   };
 
   if (limit) {
-    requestParams.max_tokens = Math.max(1, limit - totalTokenCount);
+    // count tokens again, as we may have reduced them in the meantime
+    const reducedMsgText = JSON.stringify(messages);
+    const reducedTokenCount = countTokens(reducedMsgText, model);
+    requestParams.max_tokens = limit - reducedTokenCount;
+
+    if (requestParams.max_tokens < 1) {
+      const result = await window.showInformationMessage(
+        `The request is estimated to be ${-requestParams.max_tokens} tokens over the limit (including tokens consumed by the request format) and will likely be rejected from the OpenAI API. Do you still want to proceed?`,
+        { modal: true },
+        "Yes"
+      );
+      if (result !== "Yes") {
+        return FinishReason.cancelled;
+      }
+    }
   }
 
   requestParams = addParametersFromMetadata(notebookMetadata, requestParams);
@@ -311,4 +324,137 @@ async function getOpenAIApiKey(): Promise<string> {
   }
 
   return openaiApiKey;
+}
+
+type TokenReductionStrategy = QuickPickItem & {
+  apply: Function;
+  savedTokens?: number;
+};
+
+async function applyTokenReductionStrategies(
+  messages: ChatCompletionRequestMessage[],
+  tokenOverflowCount: number,
+  totalTokenCount: number,
+  limit: number,
+  model: string
+): Promise<ChatCompletionRequestMessage[] | null> {
+  let strategies: TokenReductionStrategy[] = [
+    {
+      label: "Remove all Cell Output",
+      apply: async () => {
+        return messages.filter(
+          (message) => !message.content.startsWith("Output from previous code:")
+        );
+      },
+    },
+    {
+      label: "Remove all VSCode Problems",
+      apply: async () => {
+        return messages.filter(
+          (message) =>
+            !message.content.startsWith(
+              "Problems reported by VSCode from previous code:"
+            )
+        );
+      },
+    },
+    {
+      label: "Remove Spaces",
+      apply: async () => {
+        return messages.map((message) => ({
+          ...message,
+          content: message.content.replace(/ /g, ""),
+        }));
+      },
+    },
+    {
+      label: "Remove Line-breaks",
+      apply: async () => {
+        return messages.map((message) => ({
+          ...message,
+          content: message.content.replace(/\n/g, ""),
+        }));
+      },
+    },
+    {
+      label: "Remove Punctuations",
+      apply: async () => {
+        return messages.map((message) => ({
+          ...message,
+          content: message.content.replace(/[.,;:!?]/g, ""),
+        }));
+      },
+    },
+  ];
+
+  // Calculate token savings for each strategy
+  for (const strategy of strategies) {
+    const reducedMessages = await strategy.apply();
+    const reducedTokenCount = countTotalTokens(reducedMessages, model);
+    const savedTokens = totalTokenCount - reducedTokenCount;
+    strategy.savedTokens = savedTokens;
+    strategy.description = `${savedTokens} tokens`;
+  }
+
+  // remove strategies that wouldn't reduce tokens
+  strategies = strategies.filter((s) =>
+    s.savedTokens ? s.savedTokens > 1 : false
+  );
+
+  const maxPossibleSaving = strategies
+    .map((x) => x.savedTokens ?? 0)
+    .reduce((prev, current) => prev + current);
+
+  if (maxPossibleSaving < tokenOverflowCount) {
+    window.showInformationMessage(
+      `If we applied every token reduction strategy available, you would still be ${
+        tokenOverflowCount - maxPossibleSaving
+      } over the limit of the '${model}' model. Please reduce the size of the content.`,
+      { modal: true }
+    );
+  }
+
+  // Show the dialogue with strategies
+  const selectedStrategies = await window.showQuickPick(strategies, {
+    canPickMany: true,
+    title: "Too many tokens",
+    placeHolder: "Select one or more strategies to reduce the token count",
+  });
+
+  if (!selectedStrategies) {
+    return null;
+  }
+
+  // Apply the selected strategies
+  let reducedMessages = messages;
+  for (const strategy of selectedStrategies) {
+    reducedMessages = await strategy.apply(reducedMessages);
+  }
+
+  // Validate the total reduction
+  const reducedTokenCount = countTotalTokens(reducedMessages, model);
+  if (reducedTokenCount > limit) {
+    window.showErrorMessage(
+      "The selected strategies do not reduce tokens below the limit."
+    );
+    return null;
+  }
+
+  return reducedMessages;
+}
+
+function countTokens(text: string, model: any): number {
+  const enc = encoding_for_model(model);
+  const tokenCount = enc.encode(text).length;
+  enc.free();
+  return tokenCount;
+}
+
+function countTotalTokens(
+  messages: ChatCompletionRequestMessage[],
+  model: string
+): number {
+  return messages.reduce((accumulator, message) => {
+    return accumulator + countTokens(message.content, model);
+  }, 0);
 }
