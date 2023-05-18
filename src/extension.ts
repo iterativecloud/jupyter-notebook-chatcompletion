@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 import axios from "axios";
 import {
   ExtensionContext,
@@ -12,92 +13,38 @@ import {
 import { generateCompletion } from "./completion";
 import { CompletionType } from "./completionType";
 import { FinishReason } from "./finishReason";
-import { IncomingMessage } from "http";
 
 const GENERATING_NEXT_CELL = "Generating next cell(s)...";
 const COMPLETION_COMPLETED = "Cell generation completed";
 const COMPLETION_CANCELLED = "Generation cancelled";
 const COMPLETION_FAILED = "Failed to generate new cell(s)";
 
+function registerCommand(
+  context: ExtensionContext,
+  command: string,
+  callback: (...args: any[]) => any
+) {
+  context.subscriptions.push(commands.registerCommand(command, callback));
+}
+
 export async function activate(context: ExtensionContext) {
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.sendCellAndAbove",
-      (...args) => generateCells(args, CompletionType.currentCellAndAbove)
-    )
+  const prefix = "notebook-chatcompletion.";
+  registerCommand(context, prefix + "sendCellAndAbove", (...args) =>
+    generateCells(args, CompletionType.currentCellAndAbove)
   );
-
-  context.subscriptions.push(
-    commands.registerCommand("notebook-chatcompletion.sendCell", (...args) =>
-      generateCells(args, CompletionType.currentCell)
-    )
+  registerCommand(context, prefix + "sendCell", (...args) =>
+    generateCells(args, CompletionType.currentCell)
   );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setRoleAssistant",
-      setRoleAssistant
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setRoleSystem",
-      setRoleSystem
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand("notebook-chatcompletion.setModel", setModel)
-  );
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setTemperature",
-      setTemperature
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand("notebook-chatcompletion.setTopP", setTopP)
-  );
-
-  // n parameter is currently commented out because there's additional work
-  // in determining it's behavior when combined with stream = true (as long as it's not clear, we don't support it)
-  // context.subscriptions.push(
-  //   commands.registerCommand("notebook-chatcompletion.setN", setN)
-  // );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setMaxTokens",
-      setMaxTokens
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setPresencePenalty",
-      setPresencePenalty
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setFrequencyPenalty",
-      setFrequencyPenalty
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setLogitBias",
-      setLogitBias
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand("notebook-chatcompletion.setUser", setUser)
-  );
+  registerCommand(context, prefix + "setRoleAssistant", setRoleAssistant);
+  registerCommand(context, prefix + "setRoleSystem", setRoleSystem);
+  registerCommand(context, prefix + "setModel", setModel);
+  registerCommand(context, prefix + "setTemperature", setTemperature);
+  registerCommand(context, prefix + "setTopP", setTopP);
+  registerCommand(context, prefix + "setMaxTokens", setMaxTokens);
+  registerCommand(context, prefix + "setPresencePenalty", setPresencePenalty);
+  registerCommand(context, prefix + "setFrequencyPenalty", setFrequencyPenalty);
+  registerCommand(context, prefix + "setLogitBias", setLogitBias);
+  registerCommand(context, prefix + "setUser", setUser);
 }
 
 function getErrorMessage(error: unknown) {
@@ -228,7 +175,6 @@ async function setTopP() {
       NotebookEdit.updateNotebookMetadata({
         custom: {
           ...editor.notebook.metadata.custom,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
           top_p: parseFloat(topP),
         },
       }),
@@ -325,28 +271,6 @@ async function setRoleSystem() {
   await workspace.applyEdit(edit);
 }
 
-async function setN() {
-  const editor = window.activeNotebookEditor!;
-  const n = await window.showInputBox({
-    prompt: "Enter the N value (integer):",
-    validateInput: (value) =>
-      parseInt(value) > 0 ? null : "N must be a positive integer",
-  });
-
-  if (n) {
-    const edit = new WorkspaceEdit();
-    edit.set(editor.notebook.uri, [
-      NotebookEdit.updateNotebookMetadata({
-        custom: {
-          ...editor.notebook.metadata.custom,
-          n: parseInt(n),
-        },
-      }),
-    ]);
-    await workspace.applyEdit(edit);
-  }
-}
-
 async function setMaxTokens() {
   const editor = window.activeNotebookEditor!;
   const maxTokens = await window.showInputBox({
@@ -361,7 +285,6 @@ async function setMaxTokens() {
       NotebookEdit.updateNotebookMetadata({
         custom: {
           ...editor.notebook.metadata.custom,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
           max_tokens: parseInt(maxTokens),
         },
       }),
@@ -386,7 +309,6 @@ async function setPresencePenalty() {
       NotebookEdit.updateNotebookMetadata({
         custom: {
           ...editor.notebook.metadata.custom,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
           presence_penalty: parseFloat(presencePenalty),
         },
       }),
@@ -411,7 +333,6 @@ async function setFrequencyPenalty() {
       NotebookEdit.updateNotebookMetadata({
         custom: {
           ...editor.notebook.metadata.custom,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
           frequency_penalty: parseFloat(frequencyPenalty),
         },
       }),
@@ -440,7 +361,6 @@ async function setLogitBias() {
       NotebookEdit.updateNotebookMetadata({
         custom: {
           ...editor.notebook.metadata.custom,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
           logit_bias: JSON.parse(logitBias),
         },
       }),
