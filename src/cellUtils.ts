@@ -139,7 +139,13 @@ export async function convertCellsToMessages(
       role = tags[0] as ChatCompletionRequestMessageRoleEnum;
     }
 
-    messages.push({ role: role, content: cell.document.getText() });
+    let cellContent = cell.document.getText();
+
+    if (cell.kind === NotebookCellKind.Code) {
+      cellContent = `\`\`\`python \n${cellContent}\n\`\`\``;
+    }
+
+    messages.push({ role: role, content: cellContent });
 
     if (problems.length > 0) {
       messages.push({
