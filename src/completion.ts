@@ -22,6 +22,10 @@ import { encoding_for_model } from "@dqbd/tiktoken";
 import { configKeys, msgs, uiText } from "./constants";
 
 const output = window.createOutputChannel("Notebook ChatCompletion");
+type TokenReductionStrategy = QuickPickItem & {
+  apply: Function;
+  savedTokens?: number;
+};
 
 export async function generateCompletion(
   cellIndex: number,
@@ -51,27 +55,7 @@ export async function generateCompletion(
   const model = nbMetadata?.model ?? defaultModel;
   const temperature = nbMetadata?.temperature ?? 0;
 
-  let limit: number | null = null;
-
-  switch (model) {
-    case "gpt-4":
-    case "gpt-4-0314":
-      limit = 8192;
-      break;
-
-    case "gpt-4-32k":
-    case "gpt-4-32k-0314":
-      limit = 32768;
-      break;
-
-    case "gpt-3.5-turbo":
-    case "gpt-3.5-turbo-0301":
-      limit = 4096;
-      break;
-
-    default:
-      break;
-  }
+  const limit = getTokenLimit(model);
 
   const msgText = JSON.stringify(messages);
   const totalTokenCount = countTokens(msgText, model);
@@ -249,10 +233,31 @@ async function getOpenAIApiKey(): Promise<string> {
   return apiKey;
 }
 
-type TokenReductionStrategy = QuickPickItem & {
-  apply: Function;
-  savedTokens?: number;
-};
+function getTokenLimit(model: string): number | null {
+  let limit: number | null = null;
+
+  switch (model) {
+    case "gpt-4":
+    case "gpt-4-0314":
+      limit = 8192;
+      break;
+
+    case "gpt-4-32k":
+    case "gpt-4-32k-0314":
+      limit = 32768;
+      break;
+
+    case "gpt-3.5-turbo":
+    case "gpt-3.5-turbo-0301":
+      limit = 4096;
+      break;
+
+    default:
+      break;
+  }
+
+  return limit;
+}
 
 async function applyTokenReductionStrategies(
   messages: ChatCompletionRequestMessage[],
