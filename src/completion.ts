@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-
 import axios from "axios";
 import { ChatCompletionRequestMessage, Configuration, CreateChatCompletionRequest, OpenAIApi } from "openai";
 import {
@@ -166,49 +165,29 @@ export async function generateCompletion(
   return FinishReason.length;
 }
 
+type ExtendedCreateChatCompletionRequest = CreateChatCompletionRequest & {
+  [key: string]: any;
+};
+
 function addParametersFromMetadata(nbMetadata: any, reqParams: CreateChatCompletionRequest) {
-  const e = window.activeNotebookEditor;
-  if (e && nbMetadata) {
-    if (e.notebook.metadata.custom?.top_p) {
-      reqParams = {
-        ...reqParams,
-        top_p: e.notebook.metadata.custom.top_p,
-      };
-    }
-    if (e.notebook.metadata.custom?.n) {
-      reqParams = {
-        ...reqParams,
-        n: e.notebook.metadata.custom.n,
-      };
-    }
-    if (e.notebook.metadata.custom?.max_tokens) {
-      reqParams.max_tokens = e.notebook.metadata.custom.max_tokens;
-    }
-    if (e.notebook.metadata.custom?.presence_penalty) {
-      reqParams = {
-        ...reqParams,
-        presence_penalty: e.notebook.metadata.custom.presence_penalty,
-      };
-    }
-    if (e.notebook.metadata.custom?.frequency_penalty) {
-      reqParams = {
-        ...reqParams,
-        frequency_penalty: e.notebook.metadata.custom.frequency_penalty,
-      };
-    }
-    if (e.notebook.metadata.custom?.logit_bias) {
-      reqParams = {
-        ...reqParams,
-        logit_bias: e.notebook.metadata.custom.logit_bias,
-      };
-    }
-    if (e.notebook.metadata.custom?.user) {
-      reqParams = {
-        ...reqParams,
-        user: e.notebook.metadata.custom.top_p,
-      };
+  const metadataToReqParamMap = {
+    top_p: "top_p",
+    n: "n",
+    max_tokens: "max_tokens",
+    presence_penalty: "presence_penalty",
+    frequency_penalty: "frequency_penalty",
+    logit_bias: "logit_bias",
+    user: "user",
+  };
+
+  const extendedReqParams: ExtendedCreateChatCompletionRequest = reqParams;
+
+  for (const [metadataKey, reqParamKey] of Object.entries(metadataToReqParamMap)) {
+    if (nbMetadata && nbMetadata[metadataKey]) {
+      extendedReqParams[reqParamKey] = nbMetadata[metadataKey];
     }
   }
+
   return reqParams;
 }
 
@@ -266,47 +245,23 @@ async function applyTokenReductionStrategies(
   limit: number,
   model: string
 ): Promise<ChatCompletionRequestMessage[] | null> {
-  let strategies: TokenReductionStrategy[] = [
-    {
-      label: uiText.removeOutput,
-      apply: async () => {
-        return messages.filter((message) => !message.content.startsWith("Output from previous code:"));
-      },
-    },
-    {
-      label: uiText.removeProblems,
-      apply: async () => {
-        return messages.filter((message) => !message.content.startsWith("Problems reported by VSCode from previous code:"));
-      },
-    },
-    {
-      label: uiText.removeSpaces,
-      apply: async () => {
-        return messages.map((message) => ({
-          ...message,
-          content: message.content.replace(/ /g, ""),
-        }));
-      },
-    },
-    {
-      label: uiText.removeLineBreaks,
-      apply: async () => {
-        return messages.map((message) => ({
-          ...message,
-          content: message.content.replace(/\n/g, ""),
-        }));
-      },
-    },
-    {
-      label: uiText.removePunctuation,
-      apply: async () => {
-        return messages.map((message) => ({
-          ...message,
-          content: message.content.replace(/[.,;:!?]/g, ""),
-        }));
-      },
-    },
+  const replacements = [
+    [uiText.removeOutput, /^Output from previous code:.*\n?/gm, () => ""],
+    [uiText.removeProblems, /^Problems reported by VSCode from previous code:.*\n?/gm, () => ""],
+    [uiText.removeSpaces, / /g, () => ""],
+    [uiText.removeLineBreaks, /\n/g, () => ""],
+    [uiText.removePunctuation, /[.,;:!?]/g, () => ""],
   ];
+
+  let strategies: TokenReductionStrategy[] = replacements.map(([label, pattern, replacementFn]) => ({
+    label: label as string,
+    apply: async () => {
+      return messages.map((message) => ({
+        ...message,
+        content: message.content.replace(pattern as RegExp, replacementFn as () => string),
+      }));
+    },
+  }));
 
   for (const strategy of strategies) {
     const reducedMessages = await strategy.apply();
