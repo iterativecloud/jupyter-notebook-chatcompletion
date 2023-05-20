@@ -81,6 +81,15 @@ async function genCells(args: any, completionType: CompletionType) {
             throw new Error(errorMessages.unhandledFinishReason);
         }
       } catch (e: any) {
+        
+        if(e.code && e.code === "ECONNRESET") {
+          window.showErrorMessage(`${msgs.compFailed}: ${e.message}`, {
+            detail: "The OpenAI API closed the connection (ECONNRESET). You can incite the model to finish where it left off by adding a markdown cell with 'continue' and sending a new request.",
+            modal: true,
+          });
+          return;
+        }
+
         if (e instanceof axios.Cancel) {
           window.showInformationMessage(`${msgs.compCancelled}: ${e.message}`);
           return;
