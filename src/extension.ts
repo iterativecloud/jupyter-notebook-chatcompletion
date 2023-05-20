@@ -3,13 +3,8 @@ import { ExtensionContext, NotebookEdit, NotebookRange, ProgressLocation, Worksp
 import { generateCompletion } from "./completion";
 import { CompletionType } from "./completionType";
 import { FinishReason } from "./finishReason";
-
-const msgs = {
-  genNextCell: "Generating next cell(s)...",
-  compCompleted: "Cell generation completed",
-  compCancelled: "Generation cancelled",
-  compFailed: "Failed to generate new cell(s)",
-};
+import { ChatCompletionRequestMessageRoleEnum as Roles } from "openai";
+import { errorMessages, models, msgs, prompts } from "./constants";
 
 export async function activate(ctx: ExtensionContext) {
   const regCmd = (cmd: string, handler: (...args: any[]) => any) =>
@@ -17,33 +12,31 @@ export async function activate(ctx: ExtensionContext) {
 
   regCmd("sendCellAndAbove", (...args) => genCells(args, CompletionType.currentCellAndAbove));
   regCmd("sendCell", (...args) => genCells(args, CompletionType.currentCell));
-  regCmd("setRoleAssistant", () => setRole("assistant"));
-  regCmd("setRoleSystem", () => setRole("system"));
+  regCmd("setRoleAssistant", () => setRole(Roles.Assistant));
+  regCmd("setRoleSystem", () => setRole(Roles.System));
   regCmd("setModel", setModel);
-  regCmd("setTemperature", () =>
-    setParam("Temperature value (0-1):", "temperature", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1)
-  );
-  regCmd("setTopP", () => setParam("Top P value (0-1):", "top_p", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1));
-  regCmd("setMaxTokens", () => setParam("Max Tokens value (integer):", "max_tokens", parseInt, (v) => parseInt(v) > 0));
+  regCmd("setTemperature", () => setParam(prompts.temperature, "temperature", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1));
+  regCmd("setTopP", () => setParam(prompts.topP, "top_p", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1));
+  regCmd("setMaxTokens", () => setParam(prompts.maxTokens, "max_tokens", parseInt, (v) => parseInt(v) > 0));
   regCmd("setPresencePenalty", () =>
-    setParam("Presence Penalty value (0-1):", "presence_penalty", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1)
+    setParam(prompts.presencePenalty, "presence_penalty", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1)
   );
   regCmd("setFrequencyPenalty", () =>
-    setParam("Frequency Penalty value (0-1):", "frequency_penalty", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1)
+    setParam(prompts.frequencyPenalty, "frequency_penalty", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1)
   );
   regCmd("setLogitBias", () =>
-    setParam("Logit Bias value (JSON object):", "logit_bias", JSON.parse, (v) => {
+    setParam(prompts.logitBias, "logit_bias", JSON.parse, (v) => {
       try {
         JSON.parse(v);
         return null;
       } catch (e) {
-        return "Logit Bias must be a valid JSON object";
+        return msgs.logitValidJson;
       }
     })
   );
   regCmd("setUser", () =>
     setParam(
-      "User value (string):",
+      prompts.user,
       "user",
       (v) => v,
       (v) => v.trim().length > 0
@@ -81,11 +74,11 @@ async function genCells(args: any, completionType: CompletionType) {
             progress.report({ increment: 100 });
             break;
           case FinishReason.contentFilter:
-            window.showErrorMessage("OpenAI API finished early due to content policy violation");
+            window.showErrorMessage(msgs.apiViolation);
             progress.report({ increment: 100 });
             break;
           default:
-            throw new Error("Invalid state: finish_reason wasn't handled.");
+            throw new Error(errorMessages.unhandledFinishReason);
         }
       } catch (e: any) {
         if (e instanceof axios.Cancel) {
@@ -96,19 +89,19 @@ async function genCells(args: any, completionType: CompletionType) {
         if (e.response) {
           switch (e.response.status) {
             case 400:
-              detail = "The OpenAI API may return this error when the request goes over the max token limit";
+              detail = errorMessages.maxTokenLimit;
               break;
             case 401:
-              detail = "Ensure the correct OpenAI API key and requesting organization are being used.";
+              detail = errorMessages.apiKeyOrg;
               break;
             case 404:
-              detail = "The OpenAI endpoint is not found or the requested model is unknown or not available to your account.";
+              detail = errorMessages.endpointModel;
               break;
             case 429:
-              detail = "OpenAI Rate limit reached for requests, or you exceeded your current quota or the engine is currently overloaded.";
+              detail = errorMessages.rateLimit;
               break;
             case 500:
-              detail = "The OpenAI server had an error while processing your request.";
+              detail = errorMessages.serverError;
               break;
           }
         }
@@ -123,9 +116,8 @@ async function genCells(args: any, completionType: CompletionType) {
 }
 
 async function setModel() {
-  const models = ["gpt-4", "gpt-4-0314", "gpt-4-32k", "gpt-4-32k-0314", "gpt-3.5-turbo", "gpt-3.5-turbo-0301", "other"];
   const model = await window.showQuickPick(models, {
-    placeHolder: "Select the model:",
+    placeHolder: prompts.selectModel,
   });
 
   if (model) {
@@ -164,7 +156,7 @@ async function setParam(prompt: string, key: string, parseFn: (v: string) => any
   }
 }
 
-async function setRole(role: string) {
+async function setRole(role: Roles) {
   const editor = window.activeNotebookEditor!;
   const cell = editor.notebook.cellAt(editor.selection.end - 1);
   const edit = new WorkspaceEdit();
