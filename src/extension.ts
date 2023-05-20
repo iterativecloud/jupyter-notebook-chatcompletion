@@ -60,7 +60,7 @@ async function genCells(args: any, completionType: CompletionType) {
     async (progress, cancelToken) => {
       try {
         let finishReason = FinishReason.null;
-        finishReason = await generateCompletion(cellIndex, completionType, progress, cancelToken, finishReason);
+        finishReason = await generateCompletion(cellIndex, completionType, progress, cancelToken);
         await commands.executeCommand("notebook.cell.quitEdit");
 
         switch (finishReason) {
@@ -81,10 +81,9 @@ async function genCells(args: any, completionType: CompletionType) {
             throw new Error(errorMessages.unhandledFinishReason);
         }
       } catch (e: any) {
-        
-        if(e.code && e.code === "ECONNRESET") {
+        if (e.code && e.code === "ECONNRESET") {
           window.showErrorMessage(`${msgs.compFailed}: ${e.message}`, {
-            detail: "The OpenAI API closed the connection (ECONNRESET). You can incite the model to finish where it left off by adding a markdown cell with 'continue' and sending a new request.",
+            detail: msgs.connectionReset,
             modal: true,
           });
           return;

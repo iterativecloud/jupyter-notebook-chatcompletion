@@ -56,7 +56,7 @@ export async function insertCell(
   editor: NotebookEditor,
   cellIndex: number,
   cellKind: NotebookCellKind,
-  languageId: string
+  languageId: string = "markdown"
 ) {
   // Whenever we insert a cell, we remove any superfluous linebreaks in the previous cell
   const existingCell = editor.notebook.cellAt(cellIndex);

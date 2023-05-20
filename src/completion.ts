@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention */
+
 import axios from "axios";
 import { ChatCompletionRequestMessage, Configuration, CreateChatCompletionRequest, OpenAIApi } from "openai";
 import {
@@ -18,30 +19,30 @@ import { FinishReason } from "./finishReason";
 import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
 import { UIProgress } from "./uiProgress";
 import { encoding_for_model } from "@dqbd/tiktoken";
+import { configKeys, msgs, uiText } from "./constants";
 
 const output = window.createOutputChannel("Notebook ChatCompletion");
 
 export async function generateCompletion(
-  ci: number,
-  ct: CompletionType,
-  p: UIProgress,
-  t: CancellationToken,
-  prevFR: FinishReason
+  cellIndex: number,
+  completionType: CompletionType,
+  progress: UIProgress,
+  cancelToken: CancellationToken
 ): Promise<FinishReason> {
   const e = window.activeNotebookEditor!;
-  let msgs = await convertCellsToMessages(ci, ct);
+  let messages = await convertCellsToMessages(cellIndex, completionType);
   let ck: NotebookCellKind | undefined = undefined;
 
   const openaiApiKey = await getOpenAIApiKey();
 
   if (!openaiApiKey) {
-    throw new Error("OpenAI API key is not set");
+    throw new Error(msgs.apiKeyNotSet);
   }
 
   const openai = new OpenAIApi(new Configuration({ apiKey: openaiApiKey }));
 
   const tokenSource = axios.CancelToken.source();
-  t.onCancellationRequested(() => tokenSource.cancel());
+  cancelToken.onCancellationRequested(tokenSource.cancel);
 
   const nbMetadata = e.notebook.metadata.custom;
 
@@ -72,39 +73,39 @@ export async function generateCompletion(
       break;
   }
 
-  const msgText = JSON.stringify(msgs);
+  const msgText = JSON.stringify(messages);
   const totalTokenCount = countTokens(msgText, model);
 
   if (limit !== null && totalTokenCount > limit) {
     const tokenOverflow = limit - totalTokenCount;
 
-    const msgText = msgs.map((x) => x.content).join();
+    const msgText = messages.map((x) => x.content).join();
     const contentTokenCount = countTokens(msgText, model);
 
-    const reducedMessages = await applyTokenReductionStrategies(msgs, tokenOverflow, contentTokenCount, limit, model);
+    const reducedMessages = await applyTokenReductionStrategies(messages, tokenOverflow, contentTokenCount, limit, model);
 
     if (!reducedMessages) {
       return FinishReason.cancelled;
     }
 
-    msgs = reducedMessages;
+    messages = reducedMessages;
   }
 
   let reqParams: CreateChatCompletionRequest = {
     model: model,
-    messages: msgs,
+    messages: messages,
     stream: true,
     temperature: temperature,
   };
 
   if (limit) {
-    const reducedMsgText = JSON.stringify(msgs);
+    const reducedMsgText = JSON.stringify(messages);
     const reducedTokenCount = countTokens(reducedMsgText, model);
     reqParams.max_tokens = limit - reducedTokenCount;
 
     if (reqParams.max_tokens < 1) {
       const result = await window.showInformationMessage(
-        `The request is estimated to be ${-reqParams.max_tokens} tokens over the limit (including tokens consumed by the request format) and will likely be rejected from the OpenAI API. Do you still want to proceed?`,
+        `The request is estimated to be ${-reqParams.max_tokens} tokens over the limit (including the input) and will likely be rejected from the OpenAI API. Do you still want to proceed?`,
         { modal: true },
         "Yes"
       );
@@ -117,14 +118,14 @@ export async function generateCompletion(
   reqParams = addParametersFromMetadata(nbMetadata, reqParams);
 
   output.appendLine("\n" + JSON.stringify(reqParams, undefined, 2) + "\n");
-  p.report({ increment: 1, message: "Sending ChatCompletion request" });
+  progress.report({ increment: 1, message: msgs.sendingRequest });
 
   const response = await openai.createChatCompletion(reqParams, {
     cancelToken: tokenSource.token,
     responseType: "stream",
   });
 
-  for await (let textToken of bufferWholeChunks(streamChatCompletion(response, t))) {
+  for await (let textToken of bufferWholeChunks(streamChatCompletion(response, cancelToken))) {
     if (Object.values(FinishReason).includes(textToken as FinishReason)) {
       switch (textToken) {
         case FinishReason.length:
@@ -138,7 +139,7 @@ export async function generateCompletion(
           break;
       }
 
-      const currentCell = e.notebook.cellAt(ci);
+      const currentCell = e.notebook.cellAt(cellIndex);
       const text = currentCell.document.getText();
 
       if (!/\S/.test(text)) {
@@ -153,29 +154,29 @@ export async function generateCompletion(
     }
 
     if (typeof textToken !== "string") {
-      throw new Error("Invalid state: unknown stream result: " + textToken);
+      throw new Error(`Unknown stream result: ${textToken}`);
     }
 
     if (textToken.includes("```python\n")) {
       ck = NotebookCellKind.Code;
 
-      ci = await insertCell(e, ci, ck, "python");
+      cellIndex = await insertCell(e, cellIndex, ck, "python");
       textToken = textToken.replace("```python\n", "");
     } else if (textToken.includes("```") && ck === NotebookCellKind.Code) {
       textToken = textToken.replace("```", "");
 
       ck = NotebookCellKind.Markup;
-      ci = await insertCell(e, ci, ck, "markdown");
+      cellIndex = await insertCell(e, cellIndex, ck);
     }
 
     if (ck === undefined) {
-      ci = await insertCell(e, ci, NotebookCellKind.Markup, "markdown");
+      cellIndex = await insertCell(e, cellIndex, NotebookCellKind.Markup);
       ck = NotebookCellKind.Markup;
     }
 
-    await appendTextToCell(e, ci, textToken);
+    await appendTextToCell(e, cellIndex, textToken);
 
-    p.report({ increment: 0.5, message: "Receiving tokens..." });
+    progress.report({ increment: 0.5, message: msgs.receivingTokens });
   }
 
   return FinishReason.length;
@@ -228,22 +229,19 @@ function addParametersFromMetadata(nbMetadata: any, reqParams: CreateChatComplet
 }
 
 async function getOpenAIApiKey(): Promise<string> {
-  let apiKey = workspace.getConfiguration().get<string>("notebook-chatcompletion.openaiApiKey");
+  let apiKey = workspace.getConfiguration().get<string>(configKeys.openAiKey);
   if (!apiKey) {
     apiKey = await window.showInputBox({
-      prompt: "Enter your OpenAI API Key:",
-      validateInput: (value) => (value.trim().length > 0 ? null : "API Key cannot be empty"),
+      prompt: msgs.enterApiKey,
+      validateInput: (value) => (value.trim().length > 0 ? null : msgs.apiKeyCannotBeEmpty),
     });
 
     if (apiKey) {
-      await workspace.getConfiguration().update("notebook-chatcompletion.openaiApiKey", apiKey, ConfigurationTarget.Global);
+      await workspace.getConfiguration().update(configKeys.openAiKey, apiKey, ConfigurationTarget.Global);
 
-      await window.showInformationMessage(
-        "Please note that the model is set to GPT-4 by default, which you may not be able to access yet. As a result, the API may return an HTTP 404 error. You can change the 'Default Model' setting to another model or use the 'Set Model' command in the menu to set the model for a specific notebook.",
-        { modal: true }
-      );
+      await window.showInformationMessage(msgs.modelNotAccessible, { modal: true });
     } else {
-      window.showErrorMessage("OpenAI API Key is required for Notebook ChatCompletion to work.", { modal: true });
+      window.showErrorMessage(msgs.apiKeyRequired, { modal: true });
       return "";
     }
   }
@@ -257,7 +255,7 @@ type TokenReductionStrategy = QuickPickItem & {
 };
 
 async function applyTokenReductionStrategies(
-  msgs: ChatCompletionRequestMessage[],
+  messages: ChatCompletionRequestMessage[],
   tokenOverflowCount: number,
   totalTokenCount: number,
   limit: number,
@@ -265,39 +263,39 @@ async function applyTokenReductionStrategies(
 ): Promise<ChatCompletionRequestMessage[] | null> {
   let strategies: TokenReductionStrategy[] = [
     {
-      label: "Remove all Cell Output",
+      label: uiText.removeOutput,
       apply: async () => {
-        return msgs.filter((message) => !message.content.startsWith("Output from previous code:"));
+        return messages.filter((message) => !message.content.startsWith("Output from previous code:"));
       },
     },
     {
-      label: "Remove all VSCode Problems",
+      label: uiText.removeProblems,
       apply: async () => {
-        return msgs.filter((message) => !message.content.startsWith("Problems reported by VSCode from previous code:"));
+        return messages.filter((message) => !message.content.startsWith("Problems reported by VSCode from previous code:"));
       },
     },
     {
-      label: "Remove Spaces",
+      label: uiText.removeSpaces,
       apply: async () => {
-        return msgs.map((message) => ({
+        return messages.map((message) => ({
           ...message,
           content: message.content.replace(/ /g, ""),
         }));
       },
     },
     {
-      label: "Remove Line-breaks",
+      label: uiText.removeLineBreaks,
       apply: async () => {
-        return msgs.map((message) => ({
+        return messages.map((message) => ({
           ...message,
           content: message.content.replace(/\n/g, ""),
         }));
       },
     },
     {
-      label: "Remove Punctuations",
+      label: uiText.removePunctuation,
       apply: async () => {
-        return msgs.map((message) => ({
+        return messages.map((message) => ({
           ...message,
           content: message.content.replace(/[.,;:!?]/g, ""),
         }));
@@ -328,22 +326,22 @@ async function applyTokenReductionStrategies(
 
   const selectedStrategies = await window.showQuickPick(strategies, {
     canPickMany: true,
-    title: "Too many tokens",
-    placeHolder: "Select one or more strategies to reduce the token count",
+    title: uiText.tooManyTokens,
+    placeHolder: uiText.tooManyTokensPlaceholder,
   });
 
   if (!selectedStrategies) {
     return null;
   }
 
-  let reducedMessages = msgs;
+  let reducedMessages = messages;
   for (const strategy of selectedStrategies) {
     reducedMessages = await strategy.apply(reducedMessages);
   }
 
   const reducedTokenCount = countTotalTokens(reducedMessages, model);
   if (reducedTokenCount > limit) {
-    window.showErrorMessage("The selected strategies do not reduce tokens below the limit.");
+    window.showErrorMessage(msgs.notEnoughSavings);
     return null;
   }
 
