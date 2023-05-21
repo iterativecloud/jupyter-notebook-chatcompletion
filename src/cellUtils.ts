@@ -145,11 +145,12 @@ export async function convertCellsToMessages(
       cellContent = `\`\`\`python \n${cellContent}\n\`\`\``;
     }
 
-    messages.push({ role: role, content: cellContent });
+    messages.push({ role: role, content: cellContent, name: cell.kind.toString()});
 
     if (problems.length > 0) {
       messages.push({
         role: role ?? "user",
+        name: "Problems",
         content:
           "Problems reported by VSCode from previous code:\n" +
           problems.map((p) => `${p.code}: ${p.message}`),
@@ -160,18 +161,12 @@ export async function convertCellsToMessages(
       nonImgOutputs.forEach((output) =>
         messages.push({
           role: role ?? "user",
+          name: "Output",
           content: "Output from previous code:\n" + output,
         })
       );
     }
   });
-
-  const totalLengthUserMessages = messages.reduce(
-    (accumulator, currentValue) => {
-      return accumulator + currentValue.content.length;
-    },
-    0
-  );
 
   const systemMessages = messages.filter(
     (m) => m.role === ChatCompletionRequestMessageRoleEnum.System
@@ -181,6 +176,7 @@ export async function convertCellsToMessages(
   if (systemMessages.length === 0) {
     messages.push({
       role: ChatCompletionRequestMessageRoleEnum.System,
+      name: ChatCompletionRequestMessageRoleEnum.System,
       content:
         "Format your answer as markdown. If you include a markdown code block, specify the language.",
     });

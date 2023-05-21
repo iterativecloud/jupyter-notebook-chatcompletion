@@ -15,7 +15,9 @@ export const msgs = {
     "The OpenAI API closed the connection (ECONNRESET). You can incite the model to finish where it left off by adding a markdown cell with 'continue' and sending a new request.",
   sendingRequest: "Sending ChatCompletion request",
   receivingTokens: "Receiving tokens...",
-  notEnoughSavings: "The selected strategies do not reduce tokens below the limit."
+  notEnoughSavings: "The selected strategies do not reduce tokens below the limit.",
+  calculatingTokeReductions: "Token limit reached. Calculating potential reductions...",
+  calculatingTokens: "Calculating tokens..."
 };
 
 export const prompts = {

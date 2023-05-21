@@ -1,21 +1,17 @@
-import { encoding_for_model } from "@dqbd/tiktoken";
-import { ChatCompletionRequestMessage } from "openai";
+import { TiktokenModel, encoding_for_model } from "@dqbd/tiktoken";
+import { ChatCompletionRequestMessage as Message } from "openai";
 import { QuickPickItem, window } from "vscode";
 import { msgs, uiText } from "./constants";
 
 export async function applyTokenReductions(
-  messages: ChatCompletionRequestMessage[],
+  messages: Message[],
   tokenOverflowCount: number,
-  totalTokenCount: number,
   limit: number,
-  model: string
-): Promise<ChatCompletionRequestMessage[] | null> {
-  const replacements = [
-    [uiText.removeOutput, /^Output from previous code:.*\n?/gm, () => ""],
-    [uiText.removeProblems, /^Problems reported by VSCode from previous code:.*\n?/gm, () => ""],
-    [uiText.removeSpaces, / /g, () => ""],
-    [uiText.removeLineBreaks, /\n/g, () => ""],
-    [uiText.removePunctuation, /[.,;:!?]/g, () => ""],
+  model: TiktokenModel
+): Promise<Message[] | null> {
+  const replacements: { label: string; reduce: (arg1: Message) => Message | null }[] = [
+    { label: uiText.removeOutput, reduce: (m) => (m.name === "Output" ? null : m) },
+    { label: uiText.removeProblems, reduce: (m) => (m.name === "Problems" ? null : m) },
   ];
 
   type TokenReductionStrategy = QuickPickItem & {
@@ -23,15 +19,12 @@ export async function applyTokenReductions(
     savedTokens?: number;
   };
 
-  let strategies: TokenReductionStrategy[] = replacements.map(([label, pattern, replacementFn]) => ({
-    label: label as string,
-    apply: async () => {
-      return messages.map((message) => ({
-        ...message,
-        content: message.content.replace(pattern as RegExp, replacementFn as () => string),
-      }));
-    },
+  let strategies: TokenReductionStrategy[] = replacements.map((strategy) => ({
+    label: strategy.label,
+    apply: () => messages.map(strategy.reduce).filter(x => x !== null),
   }));
+
+  const totalTokenCount = countTotalTokens(messages, model);
 
   for (const strategy of strategies) {
     const reducedMessages = await strategy.apply();
@@ -78,14 +71,14 @@ export async function applyTokenReductions(
   return reducedMessages;
 }
 
-export function countTokens(text: string, model: any): number {
+export function countTokens(text: string, model: TiktokenModel): number {
   const enc = encoding_for_model(model);
   const tokenCount = enc.encode(text).length;
   enc.free();
   return tokenCount;
 }
 
-export function countTotalTokens(msgs: ChatCompletionRequestMessage[], model: string): number {
+export function countTotalTokens(msgs: Message[], model: TiktokenModel): number {
   return msgs.reduce((accumulator, message) => {
     return accumulator + countTokens(message.content, model);
   }, 0);

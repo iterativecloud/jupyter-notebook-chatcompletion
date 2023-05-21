@@ -7,8 +7,9 @@ import { addParametersFromMetadata as addNotebookConfigParams, getOpenAIApiKey, 
 import { msgs } from "./constants";
 import { FinishReason } from "./finishReason";
 import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
-import { applyTokenReductions, countTokens } from "./tokenUtils";
-import { UIProgress } from "./uiProgress";
+import { applyTokenReductions, countTokens, countTotalTokens } from "./tokenUtils";
+import { UIProgress, waitForUIDispatch } from "./uiProgress";
+import { TiktokenModel } from "@dqbd/tiktoken";
 
 const output = window.createOutputChannel("Notebook ChatCompletion");
 
@@ -88,13 +89,13 @@ export async function generateCompletion(
   cancelToken.onCancellationRequested(tokenSource.cancel);
 
   const nbMetadata = e.notebook.metadata.custom;
-
   const defaultModel = workspace.getConfiguration().get<string>("notebook-chatcompletion.defaultModel");
-
-  const model = nbMetadata?.model ?? defaultModel;
+  const model : TiktokenModel = nbMetadata?.model ?? defaultModel;
   const temperature = nbMetadata?.temperature ?? 0;
-
   const limit = getTokenLimit(model);
+
+  progress.report({ message: msgs.calculatingTokens, increment: 1 });
+  await waitForUIDispatch();
 
   const msgText = JSON.stringify(messages);
   const totalTokenCount = countTokens(msgText, model);
@@ -102,10 +103,10 @@ export async function generateCompletion(
   if (limit !== null && totalTokenCount > limit) {
     const tokenOverflow = limit - totalTokenCount;
 
-    const msgText = messages.map((x) => x.content).join();
-    const contentTokenCount = countTokens(msgText, model);
+    progress.report({ message: msgs.calculatingTokeReductions, increment: 1 });
+    await waitForUIDispatch();
 
-    const reducedMessages = await applyTokenReductions(messages, tokenOverflow, contentTokenCount, limit, model);
+    const reducedMessages = await applyTokenReductions(messages, tokenOverflow, limit, model);
 
     if (!reducedMessages) {
       return FinishReason.cancelled;
