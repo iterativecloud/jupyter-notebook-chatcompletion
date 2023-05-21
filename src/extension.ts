@@ -5,6 +5,7 @@ import { CompletionType } from "./completionType";
 import { FinishReason } from "./finishReason";
 import { ChatCompletionRequestMessageRoleEnum as Roles } from "openai";
 import { errorMessages, models, msgs, prompts } from "./constants";
+import { waitForUIDispatch } from "./uiProgress";
 
 export async function activate(ctx: ExtensionContext) {
   const regCmd = (cmd: string, handler: (...args: any[]) => any) =>
@@ -15,31 +16,29 @@ export async function activate(ctx: ExtensionContext) {
   regCmd("setRoleAssistant", () => setRole(Roles.Assistant));
   regCmd("setRoleSystem", () => setRole(Roles.System));
   regCmd("setModel", setModel);
-  regCmd("setTemperature", () => setParam(prompts.temperature, "temperature", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1));
-  regCmd("setTopP", () => setParam(prompts.topP, "top_p", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1));
-  regCmd("setMaxTokens", () => setParam(prompts.maxTokens, "max_tokens", parseInt, (v) => parseInt(v) > 0));
+  regCmd("setTemperature", () => setParam(prompts.temperature, "temperature", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat));
+  regCmd("setTopP", () => setParam(prompts.topP, "top_p", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat));
+  regCmd("setMaxTokens", () => setParam(prompts.maxTokens, "max_tokens", (v) => parseInt(v) > 0, parseInt));
+  regCmd("setUser", () => setParam(prompts.user, "user", (v) => v.trim().length > 0));
   regCmd("setPresencePenalty", () =>
-    setParam(prompts.presencePenalty, "presence_penalty", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1)
+    setParam(prompts.presencePenalty, "presence_penalty", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat)
   );
   regCmd("setFrequencyPenalty", () =>
-    setParam(prompts.frequencyPenalty, "frequency_penalty", parseFloat, (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1)
+    setParam(prompts.frequencyPenalty, "frequency_penalty", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat)
   );
   regCmd("setLogitBias", () =>
-    setParam(prompts.logitBias, "logit_bias", JSON.parse, (v) => {
-      try {
-        JSON.parse(v);
-        return null;
-      } catch (e) {
-        return msgs.logitValidJson;
-      }
-    })
-  );
-  regCmd("setUser", () =>
     setParam(
-      prompts.user,
-      "user",
-      (v) => v,
-      (v) => v.trim().length > 0
+      prompts.logitBias,
+      "logit_bias",
+      (v) => {
+        try {
+          JSON.parse(v);
+          return true;
+        } catch (e) {
+          return false;
+        }
+      },
+      JSON.parse
     )
   );
 }
@@ -51,14 +50,16 @@ async function genCells(args: any, completionType: CompletionType) {
   }
   window.activeNotebookEditor!.selection = new NotebookRange(cellIndex, cellIndex);
 
-  window.withProgress(
+  await window.withProgress(
     {
       title: msgs.genNextCell,
       location: ProgressLocation.Notification,
-      cancellable: true,
+      cancellable: true
     },
     async (progress, cancelToken) => {
       try {
+        await waitForUIDispatch();
+
         let finishReason = FinishReason.null;
         finishReason = await generateCompletion(cellIndex, completionType, progress, cancelToken);
         await commands.executeCommand("notebook.cell.quitEdit");
@@ -143,7 +144,7 @@ async function setModel() {
   }
 }
 
-async function setParam(prompt: string, key: string, parseFn: (v: string) => any, validateFn: (v: string) => any) {
+async function setParam(prompt: string, key: string, validateFn: (v: string) => any, parseFn: ((v: string) => any) | null = null) {
   const editor = window.activeNotebookEditor!;
   const value = await window.showInputBox({
     prompt,
@@ -156,7 +157,7 @@ async function setParam(prompt: string, key: string, parseFn: (v: string) => any
       NotebookEdit.updateNotebookMetadata({
         custom: {
           ...editor.notebook.metadata.custom,
-          [key]: parseFn(value),
+          [key]: parseFn === null ? value : parseFn(value),
         },
       }),
     ]);
