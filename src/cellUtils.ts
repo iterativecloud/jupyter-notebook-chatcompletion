@@ -178,8 +178,7 @@ export async function convertCellsToMessages(
   );
 
   // We only add a system message if none was defined
-  // When the user's input is very short, the large language model tend to pay too much attention to the system message and starts to speak about it, which is confusing for the user. Empirically, length 32 seems to be a good threshold to avoid this.
-  if (systemMessages.length === 0 && totalLengthUserMessages > 32) {
+  if (systemMessages.length === 0) {
     messages.push({
       role: ChatCompletionRequestMessageRoleEnum.System,
       content:
