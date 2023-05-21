@@ -157,19 +157,19 @@ type ExtendedCreateChatCompletionRequest = CreateChatCompletionRequest & {
 };
 
 function addParametersFromMetadata(nbMetadata: any, reqParams: CreateChatCompletionRequest) {
-  const metadataToReqParamMap = {
-    top_p: "top_p",
-    n: "n",
-    max_tokens: "max_tokens",
-    presence_penalty: "presence_penalty",
-    frequency_penalty: "frequency_penalty",
-    logit_bias: "logit_bias",
-    user: "user",
-  };
+  const requestParams = [
+    "top_p",
+    "n",
+    "max_tokens",
+    "presence_penalty",
+    "frequency_penalty",
+    "logit_bias",
+    "user"
+  ];
 
   const extendedReqParams: ExtendedCreateChatCompletionRequest = reqParams;
 
-  for (const [metadataKey, reqParamKey] of Object.entries(metadataToReqParamMap)) {
+  for (const [metadataKey, reqParamKey] of Object.entries(requestParams)) {
     if (nbMetadata && nbMetadata[metadataKey]) {
       extendedReqParams[reqParamKey] = nbMetadata[metadataKey];
     }
