@@ -1,5 +1,5 @@
-import axios from "axios";
-import { Configuration, CreateChatCompletionRequest, OpenAIApi } from "openai";
+import axios, { AxiosResponse } from "axios";
+import { Configuration, CreateChatCompletionRequest, CreateChatCompletionResponse, OpenAIApi } from "openai";
 import { CancellationToken, NotebookCellKind, NotebookEdit, NotebookRange, WorkspaceEdit, window, workspace } from "vscode";
 import { appendTextToCell, convertCellsToMessages, insertCell } from "./cellUtils";
 import { CompletionType } from "./completionType";
@@ -11,6 +11,60 @@ import { applyTokenReductions, countTokens } from "./tokenUtils";
 import { UIProgress } from "./uiProgress";
 
 const output = window.createOutputChannel("Notebook ChatCompletion");
+
+async function streamResponse(
+  response: AxiosResponse<CreateChatCompletionResponse, any>,
+  cancelToken: CancellationToken,
+  cellIndex: number,
+  ck: NotebookCellKind | undefined,
+  progress: UIProgress
+) {
+  const editor = window.activeNotebookEditor!;
+
+  for await (let textToken of bufferWholeChunks(streamChatCompletion(response, cancelToken))) {
+    if (Object.values(FinishReason).includes(textToken as FinishReason)) {
+      const currentCell = window.activeNotebookEditor!.notebook.cellAt(cellIndex);
+      const text = currentCell.document.getText();
+
+      if (!/\S/.test(text)) {
+        const edit = new WorkspaceEdit();
+        edit.set(currentCell.notebook.uri, [NotebookEdit.deleteCells(new NotebookRange(currentCell.index, currentCell.index + 1))]);
+        await workspace.applyEdit(edit);
+      }
+
+      return textToken as FinishReason;
+    } else {
+      output.append(textToken.toString());
+    }
+
+    if (typeof textToken !== "string") {
+      throw new Error(`Unknown stream result: ${textToken}`);
+    }
+
+    if (textToken.includes("```python\n")) {
+      ck = NotebookCellKind.Code;
+
+      cellIndex = await insertCell(editor, cellIndex, ck, "python");
+      textToken = textToken.replace("```python\n", "");
+    } else if (textToken.includes("```") && ck === NotebookCellKind.Code) {
+      textToken = textToken.replace("```", "");
+
+      ck = NotebookCellKind.Markup;
+      cellIndex = await insertCell(editor, cellIndex, ck);
+    }
+
+    if (ck === undefined) {
+      cellIndex = await insertCell(editor, cellIndex, NotebookCellKind.Markup);
+      ck = NotebookCellKind.Markup;
+    }
+
+    await appendTextToCell(editor, cellIndex, textToken);
+
+    progress.report({ increment: 0.5, message: msgs.receivingTokens });
+  }
+
+  return FinishReason.length;
+}
 
 export async function generateCompletion(
   cellIndex: number,
@@ -94,59 +148,5 @@ export async function generateCompletion(
     responseType: "stream",
   });
 
-  for await (let textToken of bufferWholeChunks(streamChatCompletion(response, cancelToken))) {
-    if (Object.values(FinishReason).includes(textToken as FinishReason)) {
-      switch (textToken) {
-        case FinishReason.length:
-          output.append("FINISH_REASON_LENGTH" + "\n");
-          break;
-        case FinishReason.contentFilter:
-          output.append("FINISH_REASON_CONTENTFILTER" + "\n");
-          break;
-        case FinishReason.stop:
-          output.append("FINISH_REASON_STOP" + "\n");
-          break;
-      }
-
-      const currentCell = e.notebook.cellAt(cellIndex);
-      const text = currentCell.document.getText();
-
-      if (!/\S/.test(text)) {
-        const edit = new WorkspaceEdit();
-        edit.set(currentCell.notebook.uri, [NotebookEdit.deleteCells(new NotebookRange(currentCell.index, currentCell.index + 1))]);
-        await workspace.applyEdit(edit);
-      }
-
-      return textToken as FinishReason;
-    } else {
-      output.append(textToken.toString());
-    }
-
-    if (typeof textToken !== "string") {
-      throw new Error(`Unknown stream result: ${textToken}`);
-    }
-
-    if (textToken.includes("```python\n")) {
-      ck = NotebookCellKind.Code;
-
-      cellIndex = await insertCell(e, cellIndex, ck, "python");
-      textToken = textToken.replace("```python\n", "");
-    } else if (textToken.includes("```") && ck === NotebookCellKind.Code) {
-      textToken = textToken.replace("```", "");
-
-      ck = NotebookCellKind.Markup;
-      cellIndex = await insertCell(e, cellIndex, ck);
-    }
-
-    if (ck === undefined) {
-      cellIndex = await insertCell(e, cellIndex, NotebookCellKind.Markup);
-      ck = NotebookCellKind.Markup;
-    }
-
-    await appendTextToCell(e, cellIndex, textToken);
-
-    progress.report({ increment: 0.5, message: msgs.receivingTokens });
-  }
-
-  return FinishReason.length;
+  return await streamResponse(response, cancelToken, cellIndex, ck, progress);
 }
