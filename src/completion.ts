@@ -1,10 +1,9 @@
-/* eslint-disable @typescript-eslint/naming-convention */
 import axios from "axios";
 import { Configuration, CreateChatCompletionRequest, OpenAIApi } from "openai";
 import { CancellationToken, NotebookCellKind, NotebookEdit, NotebookRange, WorkspaceEdit, window, workspace } from "vscode";
 import { appendTextToCell, convertCellsToMessages, insertCell } from "./cellUtils";
 import { CompletionType } from "./completionType";
-import { getOpenAIApiKey, getTokenLimit } from "./config";
+import { addParametersFromMetadata as addNotebookConfigParams, getOpenAIApiKey, getTokenLimit } from "./config";
 import { msgs } from "./constants";
 import { FinishReason } from "./finishReason";
 import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
@@ -85,7 +84,7 @@ export async function generateCompletion(
     }
   }
 
-  reqParams = addParametersFromMetadata(nbMetadata, reqParams);
+  reqParams = addNotebookConfigParams(nbMetadata, reqParams);
 
   output.appendLine("\n" + JSON.stringify(reqParams, undefined, 2) + "\n");
   progress.report({ increment: 1, message: msgs.sendingRequest });
@@ -150,30 +149,4 @@ export async function generateCompletion(
   }
 
   return FinishReason.length;
-}
-
-type ExtendedCreateChatCompletionRequest = CreateChatCompletionRequest & {
-  [key: string]: any;
-};
-
-function addParametersFromMetadata(nbMetadata: any, reqParams: CreateChatCompletionRequest) {
-  const requestParams = [
-    "top_p",
-    "n",
-    "max_tokens",
-    "presence_penalty",
-    "frequency_penalty",
-    "logit_bias",
-    "user"
-  ];
-
-  const extendedReqParams: ExtendedCreateChatCompletionRequest = reqParams;
-
-  for (const [metadataKey, reqParamKey] of Object.entries(requestParams)) {
-    if (nbMetadata && nbMetadata[metadataKey]) {
-      extendedReqParams[reqParamKey] = nbMetadata[metadataKey];
-    }
-  }
-
-  return reqParams;
 }
