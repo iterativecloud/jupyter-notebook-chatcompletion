@@ -90,7 +90,7 @@ export async function generateCompletion(
 
   const nbMetadata = e.notebook.metadata.custom;
   const defaultModel = workspace.getConfiguration().get<string>("notebook-chatcompletion.defaultModel");
-  const model : TiktokenModel = nbMetadata?.model ?? defaultModel;
+  const model: TiktokenModel = nbMetadata?.model ?? defaultModel;
   const temperature = nbMetadata?.temperature ?? 0;
   const limit = getTokenLimit(model);
 
@@ -101,7 +101,7 @@ export async function generateCompletion(
   const totalTokenCount = countTokens(msgText, model);
 
   if (limit !== null && totalTokenCount > limit) {
-    const tokenOverflow = limit - totalTokenCount;
+    const tokenOverflow = totalTokenCount - limit;
 
     progress.report({ message: msgs.calculatingTokeReductions, increment: 1 });
     await waitForUIDispatch();

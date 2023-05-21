@@ -1,5 +1,5 @@
 import { TiktokenModel, encoding_for_model } from "@dqbd/tiktoken";
-import { ChatCompletionRequestMessage as Message } from "openai";
+import { ChatCompletionRequestMessage as Message, ChatCompletionResponseMessageRoleEnum as Role } from "openai";
 import { QuickPickItem, window } from "vscode";
 import { msgs, uiText } from "./constants";
 
@@ -12,6 +12,7 @@ export async function applyTokenReductions(
   const replacements: { label: string; reduce: (arg1: Message) => Message | null }[] = [
     { label: uiText.removeOutput, reduce: (m) => (m.name === "Output" ? null : m) },
     { label: uiText.removeProblems, reduce: (m) => (m.name === "Problems" ? null : m) },
+    { label: uiText.removeSystemMsg, reduce: (m) => (m.role === Role.System ? null : m) },
   ];
 
   type TokenReductionStrategy = QuickPickItem & {
@@ -21,7 +22,7 @@ export async function applyTokenReductions(
 
   let strategies: TokenReductionStrategy[] = replacements.map((strategy) => ({
     label: strategy.label,
-    apply: () => messages.map(strategy.reduce).filter(x => x !== null),
+    apply: () => messages.map(strategy.reduce).filter((x) => x !== null),
   }));
 
   const totalTokenCount = countTotalTokens(messages, model);
@@ -49,8 +50,7 @@ export async function applyTokenReductions(
 
   const selectedStrategies = await window.showQuickPick(strategies, {
     canPickMany: true,
-    title: uiText.tooManyTokens,
-    placeHolder: uiText.tooManyTokensPlaceholder,
+    title: `You have ${tokenOverflowCount} more tokens than the model's limit of ${limit}`
   });
 
   if (!selectedStrategies) {

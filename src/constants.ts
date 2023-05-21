@@ -49,9 +49,5 @@ export const configKeys = {
 export const uiText = {
     removeOutput : "Remove all Cell Output",
     removeProblems: "Remove all VSCode Problems",
-    removeSpaces: "Remove Spaces",
-    removeLineBreaks: "Remove Line-breaks",
-    removePunctuation: "Remove Punctuations",
-    tooManyTokens: "Too many tokens",
-    tooManyTokensPlaceholder:  "Select one or more strategies to reduce the token count"
+    removeSystemMsg: "Remove System Message",
 };
