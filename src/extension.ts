@@ -1,263 +1,179 @@
 import axios from "axios";
-import {
-  ExtensionContext,
-  NotebookEdit,
-  NotebookRange,
-  ProgressLocation,
-  WorkspaceEdit,
-  commands,
-  window,
-  workspace,
-} from "vscode";
+import { ExtensionContext, NotebookEdit, NotebookRange, ProgressLocation, WorkspaceEdit, commands, window, workspace } from "vscode";
 import { generateCompletion } from "./completion";
 import { CompletionType } from "./completionType";
 import { FinishReason } from "./finishReason";
+import { ChatCompletionRequestMessageRoleEnum as Roles, OpenAIApi, Configuration } from "openai";
+import { errorMessages, msgs, prompts } from "./constants";
+import { waitForUIDispatch } from "./uiProgress";
+import { getOpenAIApiKey } from "./config";
+import { TiktokenModel } from "@dqbd/tiktoken";
 
-const GENERATING_NEXT_CELL = "Generating next cell(s)...";
-const COMPLETION_COMPLETED = "Cell generation completed";
-const COMPLETION_CANCELLED = "Generation cancelled";
-const COMPLETION_FAILED = "Failed to generate new cell(s)";
+export async function activate(ctx: ExtensionContext) {
+  const regCmd = (cmd: string, handler: (...args: any[]) => any) =>
+    ctx.subscriptions.push(commands.registerCommand("notebook-chatcompletion." + cmd, handler));
 
-export async function activate(context: ExtensionContext) {
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.sendCellAndAbove",
-      (...args) => generateCells(args, CompletionType.currentCellAndAbove)
+  regCmd("sendCellAndAbove", (...args) => genCells(args, CompletionType.currentCellAndAbove));
+  regCmd("sendCell", (...args) => genCells(args, CompletionType.currentCell));
+  regCmd("setRoleAssistant", () => setRole(Roles.Assistant));
+  regCmd("setRoleSystem", () => setRole(Roles.System));
+  regCmd("setModel", setModel);
+  regCmd("setTemperature", () => setParam(prompts.temperature, "temperature", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat));
+  regCmd("setTopP", () => setParam(prompts.topP, "top_p", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat));
+  regCmd("setMaxTokens", () => setParam(prompts.maxTokens, "max_tokens", (v) => parseInt(v) > 0, parseInt));
+  regCmd("setUser", () => setParam(prompts.user, "user", (v) => v.trim().length > 0));
+  regCmd("setPresencePenalty", () =>
+    setParam(prompts.presencePenalty, "presence_penalty", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat)
+  );
+  regCmd("setFrequencyPenalty", () =>
+    setParam(prompts.frequencyPenalty, "frequency_penalty", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat)
+  );
+  regCmd("setLogitBias", () =>
+    setParam(
+      prompts.logitBias,
+      "logit_bias",
+      (v) => {
+        try {
+          JSON.parse(v);
+          return true;
+        } catch (e) {
+          return false;
+        }
+      },
+      JSON.parse
     )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand("notebook-chatcompletion.sendCell", (...args) =>
-      generateCells(args, CompletionType.currentCell)
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setRoleAssistant",
-      setRoleAssistant
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setRoleSystem",
-      setRoleSystem
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand("notebook-chatcompletion.setModel", setModel)
-  );
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setTemperature",
-      setTemperature
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand("notebook-chatcompletion.setTopP", setTopP)
-  );
-
-  // n parameter is currently commented out because there's additional work 
-  // in determining it's behavior when combined with stream = true (as long as it's not clear, we don't support it)
-  // context.subscriptions.push(
-  //   commands.registerCommand("notebook-chatcompletion.setN", setN)
-  // );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setMaxTokens",
-      setMaxTokens
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setPresencePenalty",
-      setPresencePenalty
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setFrequencyPenalty",
-      setFrequencyPenalty
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand(
-      "notebook-chatcompletion.setLogitBias",
-      setLogitBias
-    )
-  );
-
-  context.subscriptions.push(
-    commands.registerCommand("notebook-chatcompletion.setUser", setUser)
   );
 }
 
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}
-
-async function generateCells(args: any, completionType: CompletionType) {
+async function genCells(args: any, completionType: CompletionType) {
   let cellIndex = args[0]?.index;
-
   if (!cellIndex) {
     cellIndex = window.activeNotebookEditor!.selection.end - 1;
   }
+  window.activeNotebookEditor!.selection = new NotebookRange(cellIndex, cellIndex);
 
-  window.activeNotebookEditor!.selection = new NotebookRange(
-    cellIndex,
-    cellIndex
-  );
-
-  window.withProgress(
+  await window.withProgress(
     {
-      title: GENERATING_NEXT_CELL,
+      title: msgs.genNextCell,
       location: ProgressLocation.Notification,
       cancellable: true,
     },
-    async function (progress, token) {
+    async (progress, cancelToken) => {
       try {
+        await waitForUIDispatch();
+
         let finishReason = FinishReason.null;
-
-        while (
-          finishReason === FinishReason.null ||
-          finishReason === FinishReason.length
-        ) {
-          finishReason = await generateCompletion(
-            cellIndex,
-            completionType,
-            progress,
-            token,
-            finishReason
-          );
-        }
-
-        // we are done editing any cell, so we close edit mode
+        finishReason = await generateCompletion(cellIndex, completionType, progress, cancelToken);
         await commands.executeCommand("notebook.cell.quitEdit");
 
         switch (finishReason) {
+          case FinishReason.length:
           case FinishReason.stop:
-            // report success
-            window.showInformationMessage(COMPLETION_COMPLETED);
+            window.showInformationMessage(msgs.compCompleted);
             progress.report({ increment: 100 });
             break;
-
+          case FinishReason.cancelled:
+            window.showInformationMessage(msgs.compCancelled);
+            progress.report({ increment: 100 });
+            break;
           case FinishReason.contentFilter:
-            // report content policy violation
-            window.showErrorMessage(
-              "API finished early due to content policy violation"
-            );
+            window.showErrorMessage(msgs.apiViolation);
             progress.report({ increment: 100 });
             break;
-
           default:
-            throw new Error("Invalid state: finish_reason wasn't handled.");
+            throw new Error(errorMessages.unhandledFinishReason);
         }
-      } catch (error: any) {
-        if (error instanceof axios.Cancel) {
-          // report cancellation
-          window.showInformationMessage(
-            `${COMPLETION_CANCELLED}: ${error.message}`
-          );
-        } else {
-          // report error
-          window.showErrorMessage(`${COMPLETION_FAILED}: ${error.message}`, {
-            detail: getErrorMessage(error),
+      } catch (e: any) {
+        if (e.code && e.code === "ECONNRESET") {
+          window.showErrorMessage(`${msgs.compFailed}: ${e.message}`, {
+            detail: msgs.connectionReset,
             modal: true,
           });
+          return;
         }
+
+        if (e instanceof axios.Cancel) {
+          window.showInformationMessage(`${msgs.compCancelled}: ${e.message}`);
+          return;
+        }
+        let detail = "";
+        if (e.response) {
+          switch (e.response.status) {
+            case 400:
+              detail = errorMessages.maxTokenLimit;
+              break;
+            case 401:
+              detail = errorMessages.apiKeyOrg;
+              break;
+            case 404:
+              detail = errorMessages.endpointModel;
+              break;
+            case 429:
+              detail = errorMessages.rateLimit;
+              break;
+            case 500:
+              detail = errorMessages.serverError;
+              break;
+          }
+        }
+        detail += e instanceof Error ? e.message : String(e);
+        window.showErrorMessage(`${msgs.compFailed}: ${e.message}`, {
+          detail,
+          modal: true,
+        });
       }
     }
   );
 }
 
-async function setTopP() {
-  const editor = window.activeNotebookEditor!;
-  const topP = await window.showInputBox({
-    prompt: "Enter the Top P value (0-1):",
-    validateInput: (value) =>
-      parseFloat(value) >= 0 && parseFloat(value) <= 1
-        ? null
-        : "Top P must be between 0 and 1",
+export async function setModel() : Promise<string | undefined> {
+  const openaiApiKey = await getOpenAIApiKey();
+
+  if (!openaiApiKey) {
+    throw new Error(msgs.apiKeyNotSet);
+  }
+
+  const openai = new OpenAIApi(new Configuration({ apiKey: openaiApiKey }));
+
+  const models = (await openai.listModels()).data.data.map(
+    (x) => x.id).filter(x => x.startsWith("gpt"));
+
+  const model = await window.showQuickPick(models, {
+    ignoreFocusOut: true,
+    placeHolder: prompts.selectModel,
   });
-
-  if (topP) {
-    const edit = new WorkspaceEdit();
-    edit.set(editor.notebook.uri, [
-      NotebookEdit.updateNotebookMetadata({
-        custom: {
-          ...editor.notebook.metadata.custom,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
-          top_p: parseFloat(topP),
-        },
-      }),
-    ]);
-    await workspace.applyEdit(edit);
-  }
-}
-
-async function setModel() {
-  const editor = window.activeNotebookEditor!;
-  let model = await window.showQuickPick(
-    [
-      "gpt-4",
-      "gpt-4-0314",
-      "gpt-4-32k",
-      "gpt-4-32k-0314",
-      "gpt-3.5-turbo",
-      "gpt-3.5-turbo-0301",
-      "other",
-    ],
-    {
-      placeHolder: "Select the model:",
-    }
-  );
-
-  if (model === "other") {
-    model = await window.showInputBox({
-      prompt: "Enter the model name:",
-      validateInput: (value) =>
-        value.trim().length > 0 ? null : "Model name cannot be empty",
-    });
-  }
 
   if (model) {
-    const edit = new WorkspaceEdit();
-    edit.set(editor.notebook.uri, [
-      NotebookEdit.updateNotebookMetadata({
-        custom: { ...editor.notebook.metadata.custom, model: model },
-      }),
-    ]);
-    await workspace.applyEdit(edit);
-  }
-}
-
-export async function setTemperature() {
-  const editor = window.activeNotebookEditor!;
-  const temperature = await window.showInputBox({
-    prompt: "Enter the temperature value (0-1):",
-    validateInput: (value) =>
-      parseFloat(value) >= 0 && parseFloat(value) <= 1
-        ? null
-        : "Temperature must be between 0 and 1",
-  });
-
-  if (temperature) {
+    const editor = window.activeNotebookEditor!;
     const edit = new WorkspaceEdit();
     edit.set(editor.notebook.uri, [
       NotebookEdit.updateNotebookMetadata({
         custom: {
           ...editor.notebook.metadata.custom,
-          temperature: parseFloat(temperature),
+          model: model,
+        },
+      }),
+    ]);
+    await workspace.applyEdit(edit);
+  }
+
+  return model;
+}
+
+async function setParam(prompt: string, key: string, validateFn: (v: string) => any, parseFn: ((v: string) => any) | null = null) {
+  const editor = window.activeNotebookEditor!;
+  const value = await window.showInputBox({
+    prompt,
+    validateInput: validateFn,
+  });
+
+  if (value) {
+    const edit = new WorkspaceEdit();
+    edit.set(editor.notebook.uri, [
+      NotebookEdit.updateNotebookMetadata({
+        custom: {
+          ...editor.notebook.metadata.custom,
+          [key]: parseFn === null ? value : parseFn(value),
         },
       }),
     ]);
@@ -265,176 +181,14 @@ export async function setTemperature() {
   }
 }
 
-async function setRoleAssistant() {
+async function setRole(role: Roles) {
   const editor = window.activeNotebookEditor!;
-  const cellIndex = editor.selection.end - 1;
-  const cell = editor.notebook.cellAt(cellIndex);
-
+  const cell = editor.notebook.cellAt(editor.selection.end - 1);
   const edit = new WorkspaceEdit();
   edit.set(cell.notebook.uri, [
     NotebookEdit.updateCellMetadata(cell.index, {
-      custom: { metadata: { tags: ["assistant"] } },
+      custom: { metadata: { tags: [role] } },
     }),
   ]);
   await workspace.applyEdit(edit);
-}
-
-async function setRoleSystem() {
-  const editor = window.activeNotebookEditor!;
-  const cellIndex = editor.selection.end - 1;
-  const cell = editor.notebook.cellAt(cellIndex);
-
-  const edit = new WorkspaceEdit();
-  edit.set(cell.notebook.uri, [
-    NotebookEdit.updateCellMetadata(cell.index, {
-      custom: { metadata: { tags: ["system"] } },
-    }),
-  ]);
-  await workspace.applyEdit(edit);
-}
-
-async function setN() {
-  const editor = window.activeNotebookEditor!;
-  const n = await window.showInputBox({
-    prompt: "Enter the N value (integer):",
-    validateInput: (value) =>
-      parseInt(value) > 0 ? null : "N must be a positive integer",
-  });
-
-  if (n) {
-    const edit = new WorkspaceEdit();
-    edit.set(editor.notebook.uri, [
-      NotebookEdit.updateNotebookMetadata({
-        custom: {
-          ...editor.notebook.metadata.custom,
-          n: parseInt(n),
-        },
-      }),
-    ]);
-    await workspace.applyEdit(edit);
-  }
-}
-
-async function setMaxTokens() {
-  const editor = window.activeNotebookEditor!;
-  const maxTokens = await window.showInputBox({
-    prompt: "Enter the Max Tokens value (integer):",
-    validateInput: (value) =>
-      parseInt(value) > 0 ? null : "Max Tokens must be a positive integer",
-  });
-
-  if (maxTokens) {
-    const edit = new WorkspaceEdit();
-    edit.set(editor.notebook.uri, [
-      NotebookEdit.updateNotebookMetadata({
-        custom: {
-          ...editor.notebook.metadata.custom,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
-          max_tokens: parseInt(maxTokens),
-        },
-      }),
-    ]);
-    await workspace.applyEdit(edit);
-  }
-}
-
-async function setPresencePenalty() {
-  const editor = window.activeNotebookEditor!;
-  const presencePenalty = await window.showInputBox({
-    prompt: "Enter the Presence Penalty value (0-1):",
-    validateInput: (value) =>
-      parseFloat(value) >= 0 && parseFloat(value) <= 1
-        ? null
-        : "Presence Penalty must be between 0 and 1",
-  });
-
-  if (presencePenalty) {
-    const edit = new WorkspaceEdit();
-    edit.set(editor.notebook.uri, [
-      NotebookEdit.updateNotebookMetadata({
-        custom: {
-          ...editor.notebook.metadata.custom,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
-          presence_penalty: parseFloat(presencePenalty),
-        },
-      }),
-    ]);
-    await workspace.applyEdit(edit);
-  }
-}
-
-async function setFrequencyPenalty() {
-  const editor = window.activeNotebookEditor!;
-  const frequencyPenalty = await window.showInputBox({
-    prompt: "Enter the Frequency Penalty value (0-1):",
-    validateInput: (value) =>
-      parseFloat(value) >= 0 && parseFloat(value) <= 1
-        ? null
-        : "Frequency Penalty must be between 0 and 1",
-  });
-
-  if (frequencyPenalty) {
-    const edit = new WorkspaceEdit();
-    edit.set(editor.notebook.uri, [
-      NotebookEdit.updateNotebookMetadata({
-        custom: {
-          ...editor.notebook.metadata.custom,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
-          frequency_penalty: parseFloat(frequencyPenalty),
-        },
-      }),
-    ]);
-    await workspace.applyEdit(edit);
-  }
-}
-
-async function setLogitBias() {
-  const editor = window.activeNotebookEditor!;
-  const logitBias = await window.showInputBox({
-    prompt: "Enter the Logit Bias value (JSON object):",
-    validateInput: (value) => {
-      try {
-        JSON.parse(value);
-        return null;
-      } catch (error) {
-        return "Logit Bias must be a valid JSON object";
-      }
-    },
-  });
-
-  if (logitBias) {
-    const edit = new WorkspaceEdit();
-    edit.set(editor.notebook.uri, [
-      NotebookEdit.updateNotebookMetadata({
-        custom: {
-          ...editor.notebook.metadata.custom,
-          // eslint-disable-next-line @typescript-eslint/naming-convention
-          logit_bias: JSON.parse(logitBias),
-        },
-      }),
-    ]);
-    await workspace.applyEdit(edit);
-  }
-}
-
-async function setUser() {
-  const editor = window.activeNotebookEditor!;
-  const user = await window.showInputBox({
-    prompt: "Enter the User value (string):",
-    validateInput: (value) =>
-      value.trim().length > 0 ? null : "User value cannot be empty",
-  });
-
-  if (user) {
-    const edit = new WorkspaceEdit();
-    edit.set(editor.notebook.uri, [
-      NotebookEdit.updateNotebookMetadata({
-        custom: {
-          ...editor.notebook.metadata.custom,
-          user: user,
-        },
-      }),
-    ]);
-    await workspace.applyEdit(edit);
-  }
 }

@@ -1,260 +1,165 @@
-import axios from "axios";
-import { Configuration, CreateChatCompletionRequest, OpenAIApi } from "openai";
-import {
-  CancellationToken,
-  ConfigurationTarget,
-  NotebookCellKind,
-  NotebookEdit,
-  NotebookRange,
-  WorkspaceEdit,
-  window,
-  workspace,
-} from "vscode";
-import {
-  appendTextToCell,
-  convertCellsToMessages,
-  insertCell,
-} from "./cellUtils";
+import axios, { AxiosResponse } from "axios";
+import { Configuration, CreateChatCompletionRequest, CreateChatCompletionResponse, OpenAIApi } from "openai";
+import { CancellationToken, NotebookCellKind, NotebookEdit, NotebookRange, WorkspaceEdit, window, workspace } from "vscode";
+import { appendTextToCell, convertCellsToMessages, insertCell } from "./cellUtils";
 import { CompletionType } from "./completionType";
+import { addParametersFromMetadata as addNotebookConfigParams, getOpenAIApiKey, getTokenLimit } from "./config";
+import { msgs } from "./constants";
 import { FinishReason } from "./finishReason";
 import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
-import { UIProgress } from "./uiProgress";
+import { applyTokenReductions, countTokens } from "./tokenUtils";
+import { UIProgress, waitForUIDispatch } from "./uiProgress";
+import { TiktokenModel } from "@dqbd/tiktoken";
+import { setModel } from "./extension";
 
-export const SENDING_COMPLETION_REQUEST = "Sending ChatCompletion request";
-export const RECEIVING_TOKENS = "Receiving tokens...";
-const pythonCodeBlockStart = "```python\n";
-const codeBlockEnd = "```";
+const output = window.createOutputChannel("Notebook ChatCompletion");
 
-export const output = window.createOutputChannel("Notebook ChatCompletion");
-
-export async function generateCompletion(
+async function streamResponse(
+  response: AxiosResponse<CreateChatCompletionResponse, any>,
+  cancelToken: CancellationToken,
   cellIndex: number,
-  completionType: CompletionType,
-  progress: UIProgress,
-  token: CancellationToken,
-  previousFinishReason: FinishReason
-): Promise<FinishReason> {
+  ck: NotebookCellKind | undefined,
+  progress: UIProgress
+) {
   const editor = window.activeNotebookEditor!;
+  output.show(true);
 
-  const messages = await convertCellsToMessages(cellIndex, completionType);
-  let currentKind: NotebookCellKind | undefined = undefined;
-
-  // If the generation was previously interrupted, we need to nudge the prompt
-  // toward continuation without repetition of incomplete text.
-  if (previousFinishReason === FinishReason.length) {
-    // If we see that we previously finished because of length, we assume that the current call is
-    // a continuation of an interrupted completion (max token length), and therefore we
-    // will not create a new cell and append text to the existing one instead
-    let cell = editor.notebook.cellAt(cellIndex);
-    currentKind = cell.kind;
-
-    // This is a workaround because normally we persist the role as cell metadata.
-    // However, we cannot read directly the metadata directly after write until the cell is out
-    // of edit mode, so we have to manually fix the role of the last cell in order to continue directly.
-    const userMessages = messages.filter((m) => m.role === "user");
-    userMessages[userMessages.length - 1].role = "assistant";
-
-    // we inject an extra message to force continuation without repetition
-    messages.push({
-      role: "user",
-      content: "Continue. Don't repeat any text from your previous message.",
-    });
-  }
-
-  const openAIApiKey = await getOpenAIApiKey();
-
-  if (!openAIApiKey) {
-    throw new Error("OpenAI API key is not set");
-  }
-
-  const openai = new OpenAIApi(new Configuration({ apiKey: openAIApiKey }));
-
-  const tokenSource = axios.CancelToken.source();
-  token.onCancellationRequested(() => tokenSource.cancel());
-
-  const notebookMetadata = editor.notebook.metadata.custom;
-
-  // Model and temperature are the only parameters we define defaults for.
-  // Otherwise, everything else is left untouched if not defined
-  const model = notebookMetadata?.model ?? "gpt-4";
-  const temperature = notebookMetadata?.temperature ?? 0;
-
-  let requestParams: CreateChatCompletionRequest = {
-    model: model,
-    messages,
-    stream: true,
-    temperature: temperature,
-  };
-
-  if (notebookMetadata) {
-    if (editor.notebook.metadata.custom?.top_p) {
-      requestParams = {
-        ...requestParams,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        top_p: editor.notebook.metadata.custom.top_p,
-      };
-    }
-    if (editor.notebook.metadata.custom?.n) {
-      requestParams = {
-        ...requestParams,
-        n: editor.notebook.metadata.custom.n,
-      };
-    }
-    if (editor.notebook.metadata.custom?.max_tokens) {
-      requestParams = {
-        ...requestParams,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        max_tokens: editor.notebook.metadata.custom.max_tokens,
-      };
-    }
-    if (editor.notebook.metadata.custom?.presence_penalty) {
-      requestParams = {
-        ...requestParams,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        presence_penalty: editor.notebook.metadata.custom.presence_penalty,
-      };
-    }
-    if (editor.notebook.metadata.custom?.frequency_penalty) {
-      requestParams = {
-        ...requestParams,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        frequency_penalty: editor.notebook.metadata.custom.frequency_penalty,
-      };
-    }
-    if (editor.notebook.metadata.custom?.logit_bias) {
-      requestParams = {
-        ...requestParams,
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        logit_bias: editor.notebook.metadata.custom.logit_bias,
-      };
-    }
-    if (editor.notebook.metadata.custom?.user) {
-      requestParams = {
-        ...requestParams,
-        user: editor.notebook.metadata.custom.top_p,
-      };
-    }
-  }
-
-  output.appendLine("\n" + JSON.stringify(requestParams, undefined, 2) + "\n");
-  progress.report({ increment: 1, message: SENDING_COMPLETION_REQUEST });
-
-  const response = await openai.createChatCompletion(requestParams, {
-    cancelToken: tokenSource.token,
-    responseType: "stream",
-  });
-
-  for await (let textToken of bufferWholeChunks(
-    streamChatCompletion(response, token)
-  )) {
-    // debug output of FinishReaseon
+  for await (let textToken of bufferWholeChunks(streamChatCompletion(response, cancelToken))) {
     if (Object.values(FinishReason).includes(textToken as FinishReason)) {
-      switch (textToken) {
-        case FinishReason.length:
-          output.append("FINISH_REASON_LENGTH" + "\n");
-          break;
-        case FinishReason.contentFilter:
-          output.append("FINISH_REASON_CONTENTFILTER" + "\n");
-          break;
-        case FinishReason.stop:
-          output.append("FINISH_REASON_STOP" + "\n");
-          break;
-      }
-
-      const currentCell = editor.notebook.cellAt(cellIndex);
+      const currentCell = window.activeNotebookEditor!.notebook.cellAt(cellIndex);
       const text = currentCell.document.getText();
 
-      // we're wrapping up and may find out that the last cell only contains whitespaces or linesbreak.
-      // in that case, we retroactively removed that last empty cell
       if (!/\S/.test(text)) {
         const edit = new WorkspaceEdit();
-        edit.set(currentCell.notebook.uri, [
-          NotebookEdit.deleteCells(
-            new NotebookRange(currentCell.index, currentCell.index + 1)
-          ),
-        ]);
+        edit.set(currentCell.notebook.uri, [NotebookEdit.deleteCells(new NotebookRange(currentCell.index, currentCell.index + 1))]);
         await workspace.applyEdit(edit);
       }
 
       return textToken as FinishReason;
     } else {
-      // Debug output of text
       output.append(textToken.toString());
     }
 
     if (typeof textToken !== "string") {
-      throw new Error("Invalid state: unknown stream result: " + textToken);
+      throw new Error(`Unknown stream result: ${textToken}`);
     }
 
-    if (textToken.includes(pythonCodeBlockStart)) {
-      // we have yet to support polyglot notebooks, so for now we treat everything that isn't
-      // python as markdown. Still, we make a dedicated cell for that block.
-      currentKind = NotebookCellKind.Code;
+    if (textToken.includes("```python\n")) {
+      ck = NotebookCellKind.Code;
 
-      cellIndex = await insertCell(editor, cellIndex, currentKind, "python");
-      textToken = textToken.replace(pythonCodeBlockStart, "");
-    } else if (
-      textToken.includes(codeBlockEnd) &&
-      currentKind === NotebookCellKind.Code
-    ) {
-      textToken = textToken.replace(codeBlockEnd, "");
+      cellIndex = await insertCell(editor, cellIndex, ck, "python");
+      textToken = textToken.replace("```python\n", "");
+    } else if (textToken.includes("```") && ck === NotebookCellKind.Code) {
+      textToken = textToken.replace("```", "");
 
-      // if after removing the backticks we still got some remaining that isn't linebreaks or whitespaces,
-      // we create a new markdown cell
-      currentKind = NotebookCellKind.Markup;
-      cellIndex = await insertCell(editor, cellIndex, currentKind, "markdown");
+      ck = NotebookCellKind.Markup;
+      cellIndex = await insertCell(editor, cellIndex, ck);
     }
 
-    if (currentKind === undefined) {
-      // we assume we are just getting started with a first markdown cell
-      cellIndex = await insertCell(
-        editor,
-        cellIndex,
-        NotebookCellKind.Markup,
-        "markdown"
-      );
-      currentKind = NotebookCellKind.Markup;
+    if (ck === undefined) {
+      cellIndex = await insertCell(editor, cellIndex, NotebookCellKind.Markup);
+      ck = NotebookCellKind.Markup;
     }
 
-    // write token
     await appendTextToCell(editor, cellIndex, textToken);
 
-    progress.report({ increment: 0.5, message: RECEIVING_TOKENS });
+    progress.report({ increment: 0.5, message: msgs.receivingTokens });
   }
 
-  // We came to the end of the string without ever receiving a FinishReason from the API (or we have a bug). This is an invalid state.
-  throw new Error("Reached end of stream before receiving stop_reason");
+  return FinishReason.length;
 }
 
-async function getOpenAIApiKey(): Promise<string> {
-  let openaiApiKey = workspace
-    .getConfiguration()
-    .get<string>("notebook-chatcompletion.openaiApiKey");
-  if (!openaiApiKey) {
-    // Prompt the user to enter the API key
-    openaiApiKey = await window.showInputBox({
-      prompt: "Enter your OpenAI API Key:",
-      validateInput: (value) =>
-        value.trim().length > 0 ? null : "API Key cannot be empty",
-    });
+export async function generateCompletion(
+  cellIndex: number,
+  completionType: CompletionType,
+  progress: UIProgress,
+  cancelToken: CancellationToken
+): Promise<FinishReason> {
+  const e = window.activeNotebookEditor!;
+  let messages = await convertCellsToMessages(cellIndex, completionType);
+  let ck: NotebookCellKind | undefined = undefined;
 
-    // Save the API key to the extension settings
-    if (openaiApiKey) {
-      await workspace
-        .getConfiguration()
-        .update(
-          "notebook-chatcompletion.openaiApiKey",
-          openaiApiKey,
-          ConfigurationTarget.Global
-        );
+  const openaiApiKey = await getOpenAIApiKey();
+
+  if (!openaiApiKey) {
+    throw new Error(msgs.apiKeyNotSet);
+  }
+
+  const openai = new OpenAIApi(new Configuration({ apiKey: openaiApiKey }));
+
+  const tokenSource = axios.CancelToken.source();
+  cancelToken.onCancellationRequested(tokenSource.cancel);
+
+  let nbMetadata = e.notebook.metadata.custom;
+
+  if (!nbMetadata?.model) {
+    const result = await setModel();
+    if (result) {
+      nbMetadata = e.notebook.metadata.custom;
     } else {
-      // If the user didn't provide an API key, show an error message and return
-      window.showErrorMessage(
-        "OpenAI API Key is required for Notebook ChatCompletion to work."
-      );
-      return "";
+      throw new Error(msgs.modelNotSet);
     }
   }
 
-  return openaiApiKey;
+  const model: TiktokenModel = nbMetadata?.model;
+  const temperature = nbMetadata?.temperature ?? 0;
+  const limit = getTokenLimit(model);
+
+  progress.report({ message: msgs.calculatingTokens, increment: 1 });
+  await waitForUIDispatch();
+
+  const totalTokenCount = countTokens(messages, model);
+
+  if (limit !== null && totalTokenCount > limit) {
+    const tokenOverflow = totalTokenCount - limit;
+
+    progress.report({ message: msgs.calculatingTokeReductions, increment: 1 });
+    await waitForUIDispatch();
+
+    const reducedMessages = await applyTokenReductions(messages, tokenOverflow, limit, model);
+
+    if (!reducedMessages) {
+      return FinishReason.cancelled;
+    }
+
+    messages = reducedMessages;
+  }
+
+  let reqParams: CreateChatCompletionRequest = {
+    model: model,
+    messages: messages,
+    stream: true,
+    temperature: temperature,
+  };
+
+  if (limit) {
+    const reducedTokenCount = countTokens(messages, model);
+    reqParams.max_tokens = limit - reducedTokenCount;
+
+    if (reqParams.max_tokens < 1) {
+      const result = await window.showInformationMessage(
+        `The request is estimated to be ${-reqParams.max_tokens} tokens over the limit (including the input) and will likely be rejected from the OpenAI API. Do you still want to proceed?`,
+        { modal: true },
+        "Yes"
+      );
+      if (result !== "Yes") {
+        return FinishReason.cancelled;
+      } else {
+        // The user still wants to send the requests despite the going over the limit. In that case we completely remove the max_tokens parameter.
+        reqParams.max_tokens = undefined;
+      }
+    }
+  }
+
+  reqParams = addNotebookConfigParams(nbMetadata, reqParams);
+
+  output.appendLine("\n" + JSON.stringify(reqParams, undefined, 2) + "\n");
+  progress.report({ increment: 1, message: msgs.sendingRequest });
+
+  const response = await openai.createChatCompletion(reqParams, {
+    cancelToken: tokenSource.token,
+    responseType: "stream",
+  });
+
+  return await streamResponse(response, cancelToken, cellIndex, ck, progress);
 }

@@ -56,7 +56,7 @@ export async function insertCell(
   editor: NotebookEditor,
   cellIndex: number,
   cellKind: NotebookCellKind,
-  languageId: string
+  languageId: string = "markdown"
 ) {
   // Whenever we insert a cell, we remove any superfluous linebreaks in the previous cell
   const existingCell = editor.notebook.cellAt(cellIndex);
@@ -128,31 +128,7 @@ export async function convertCellsToMessages(
       return { cell, problems, nonImgOutputs };
     });
 
-  const addProblemsOption = `Add Problems (${cellInfos.reduce(
-    (a, c) => a + c.problems.length,
-    0
-  )})`;
-  const addOutputsOption = `Add Outputs (${cellInfos.reduce(
-    (a, c) => a + c.nonImgOutputs.length,
-    0
-  )})`;
-
-  const options = cellInfos.some((c) => c.problems.length)
-    ? [addProblemsOption]
-    : [];
-
-  if (cellInfos.some((c) => c.nonImgOutputs.length)) {
-    options.push(addOutputsOption);
-  }
-
   var messages: ChatCompletionRequestMessage[] = [];
-  const selectedOptions =
-    options.length > 0
-      ? await window.showQuickPick(options, {
-          placeHolder: ADDITIONAL_PROMPT_INFO_MESSAGE,
-          canPickMany: true,
-        })
-      : [];
 
   cellInfos.forEach(({ cell, problems, nonImgOutputs }) => {
     let role: ChatCompletionRequestMessageRoleEnum =
@@ -163,49 +139,44 @@ export async function convertCellsToMessages(
       role = tags[0] as ChatCompletionRequestMessageRoleEnum;
     }
 
-    messages.push({ role: role, content: cell.document.getText() });
+    let cellContent = cell.document.getText();
 
-    if (
-      problems.length &&
-      selectedOptions?.some((x) => x.includes(addProblemsOption))
-    ) {
+    if (cell.kind === NotebookCellKind.Code) {
+      cellContent = `\`\`\`python \n${cellContent}\n\`\`\``;
+    }
+
+    messages.push({ role: role, content: cellContent, name: cell.kind.toString()});
+
+    if (problems.length > 0) {
       messages.push({
         role: role ?? "user",
+        name: "Problems",
         content:
           "Problems reported by VSCode from previous code:\n" +
           problems.map((p) => `${p.code}: ${p.message}`),
       });
     }
 
-    if (
-      nonImgOutputs.length &&
-      selectedOptions?.some((x) => x.includes(addOutputsOption))
-    ) {
+    if (nonImgOutputs.length) {
       nonImgOutputs.forEach((output) =>
         messages.push({
           role: role ?? "user",
+          name: "Output",
           content: "Output from previous code:\n" + output,
         })
       );
     }
   });
 
-  const totalLengthUserMessages = messages.reduce(
-    (accumulator, currentValue) => {
-      return accumulator + currentValue.content.length;
-    },
-    0
-  );
-
   const systemMessages = messages.filter(
     (m) => m.role === ChatCompletionRequestMessageRoleEnum.System
   );
 
   // We only add a system message if none was defined
-  // When the user's input is very short, the large language model tend to pay too much attention to the system message and starts to speak about it, which is confusing for the user. Empirically, length 32 seems to be a good threshold to avoid this.
-  if (systemMessages.length === 0 && totalLengthUserMessages > 32) {
+  if (systemMessages.length === 0) {
     messages.push({
       role: ChatCompletionRequestMessageRoleEnum.System,
+      name: ChatCompletionRequestMessageRoleEnum.System,
       content:
         "Format your answer as markdown. If you include a markdown code block, specify the language.",
     });
