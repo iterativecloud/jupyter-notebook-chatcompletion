@@ -162,11 +162,6 @@
             "type": "string",
             "default": "",
             "description": "OpenAI API Key for Notebook ChatCompletion"
-          },
-          "notebook-chatcompletion.defaultModel": {
-            "type": "string",
-            "default": "gpt-4",
-            "description": "Default model for Notebook ChatCompletion when the model is not set directly on the notebook"
           }
         }
       }

@@ -6,14 +6,13 @@ export async function getOpenAIApiKey(): Promise<string> {
   let apiKey = workspace.getConfiguration().get<string>(configKeys.openAiKey);
   if (!apiKey) {
     apiKey = await window.showInputBox({
+      ignoreFocusOut : true,
       prompt: msgs.enterApiKey,
       validateInput: (value) => (value.trim().length > 0 ? null : msgs.apiKeyCannotBeEmpty),
     });
 
     if (apiKey) {
       await workspace.getConfiguration().update(configKeys.openAiKey, apiKey, ConfigurationTarget.Global);
-
-      await window.showInformationMessage(msgs.modelNotAccessible, { modal: true });
     } else {
       window.showErrorMessage(msgs.apiKeyRequired, { modal: true });
       return "";

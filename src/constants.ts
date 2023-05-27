@@ -8,8 +8,6 @@ export const msgs = {
   apiKeyNotSet: "OpenAI API key is not set",
   enterApiKey: "Enter your OpenAI API Key:",
   apiKeyCannotBeEmpty: "API Key cannot be empty",
-  modelNotAccessible:
-    "Please note that the model is set to GPT-4 by default, which you may not be able to access yet. As a result, the API may return an HTTP 404 error. You can change the 'Default Model' setting to another model or use the 'Set Model' command in the menu to set the model for a specific notebook.",
   apiKeyRequired: "OpenAI API Key is required for Notebook ChatCompletion to work.",
   connectionReset:
     "The OpenAI API closed the connection (ECONNRESET). You can incite the model to finish where it left off by adding a markdown cell with 'continue' and sending a new request.",
@@ -17,7 +15,8 @@ export const msgs = {
   receivingTokens: "Receiving tokens...",
   notEnoughSavings: "The selected strategies do not reduce tokens below the limit.",
   calculatingTokeReductions: "Token limit reached. Calculating potential reductions...",
-  calculatingTokens: "Calculating tokens..."
+  calculatingTokens: "Calculating tokens...",
+  modelNotSet: "You must choose a valid model before proceeding."
 };
 
 export const prompts = {
@@ -30,8 +29,6 @@ export const prompts = {
   user: "User value (string):",
   selectModel: "Select the model:",
 };
-
-export const models = ["gpt-4", "gpt-4-0314", "gpt-4-32k", "gpt-4-32k-0314", "gpt-3.5-turbo", "gpt-3.5-turbo-0301", "other"];
 
 export const errorMessages = {
   maxTokenLimit: "The OpenAI API may return this error when the request goes over the max token limit",

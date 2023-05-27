@@ -3,9 +3,11 @@ import { ExtensionContext, NotebookEdit, NotebookRange, ProgressLocation, Worksp
 import { generateCompletion } from "./completion";
 import { CompletionType } from "./completionType";
 import { FinishReason } from "./finishReason";
-import { ChatCompletionRequestMessageRoleEnum as Roles } from "openai";
-import { errorMessages, models, msgs, prompts } from "./constants";
+import { ChatCompletionRequestMessageRoleEnum as Roles, OpenAIApi, Configuration } from "openai";
+import { errorMessages, msgs, prompts } from "./constants";
 import { waitForUIDispatch } from "./uiProgress";
+import { getOpenAIApiKey } from "./config";
+import { TiktokenModel } from "@dqbd/tiktoken";
 
 export async function activate(ctx: ExtensionContext) {
   const regCmd = (cmd: string, handler: (...args: any[]) => any) =>
@@ -54,7 +56,7 @@ async function genCells(args: any, completionType: CompletionType) {
     {
       title: msgs.genNextCell,
       location: ProgressLocation.Notification,
-      cancellable: true
+      cancellable: true,
     },
     async (progress, cancelToken) => {
       try {
@@ -124,8 +126,20 @@ async function genCells(args: any, completionType: CompletionType) {
   );
 }
 
-async function setModel() {
+export async function setModel() : Promise<string | undefined> {
+  const openaiApiKey = await getOpenAIApiKey();
+
+  if (!openaiApiKey) {
+    throw new Error(msgs.apiKeyNotSet);
+  }
+
+  const openai = new OpenAIApi(new Configuration({ apiKey: openaiApiKey }));
+
+  const models = (await openai.listModels()).data.data.map(
+    (x) => x.id).filter(x => x.startsWith("gpt"));
+
   const model = await window.showQuickPick(models, {
+    ignoreFocusOut: true,
     placeHolder: prompts.selectModel,
   });
 
@@ -142,6 +156,8 @@ async function setModel() {
     ]);
     await workspace.applyEdit(edit);
   }
+
+  return model;
 }
 
 async function setParam(prompt: string, key: string, validateFn: (v: string) => any, parseFn: ((v: string) => any) | null = null) {

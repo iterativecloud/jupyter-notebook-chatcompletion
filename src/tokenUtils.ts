@@ -42,6 +42,7 @@ export async function applyTokenReductions(
   }
 
   const selectedStrategies = await window.showQuickPick(strategies, {
+    ignoreFocusOut: true,
     canPickMany: true,
     title: `You have ${tokenOverflowCount} more tokens than the model's limit of ${limit}`,
   });

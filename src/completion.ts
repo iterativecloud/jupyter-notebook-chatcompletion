@@ -10,6 +10,7 @@ import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
 import { applyTokenReductions, countTokens } from "./tokenUtils";
 import { UIProgress, waitForUIDispatch } from "./uiProgress";
 import { TiktokenModel } from "@dqbd/tiktoken";
+import { setModel } from "./extension";
 
 const output = window.createOutputChannel("Notebook ChatCompletion");
 
@@ -21,6 +22,7 @@ async function streamResponse(
   progress: UIProgress
 ) {
   const editor = window.activeNotebookEditor!;
+  output.show(true);
 
   for await (let textToken of bufferWholeChunks(streamChatCompletion(response, cancelToken))) {
     if (Object.values(FinishReason).includes(textToken as FinishReason)) {
@@ -88,9 +90,18 @@ export async function generateCompletion(
   const tokenSource = axios.CancelToken.source();
   cancelToken.onCancellationRequested(tokenSource.cancel);
 
-  const nbMetadata = e.notebook.metadata.custom;
-  const defaultModel = workspace.getConfiguration().get<string>("notebook-chatcompletion.defaultModel");
-  const model: TiktokenModel = nbMetadata?.model ?? defaultModel;
+  let nbMetadata = e.notebook.metadata.custom;
+
+  if (!nbMetadata?.model) {
+    const result = await setModel();
+    if (result) {
+      nbMetadata = e.notebook.metadata.custom;
+    } else {
+      throw new Error(msgs.modelNotSet);
+    }
+  }
+
+  const model: TiktokenModel = nbMetadata?.model;
   const temperature = nbMetadata?.temperature ?? 0;
   const limit = getTokenLimit(model);
 
@@ -133,8 +144,7 @@ export async function generateCompletion(
       );
       if (result !== "Yes") {
         return FinishReason.cancelled;
-      }
-      else{
+      } else {
         // The user still wants to send the requests despite the going over the limit. In that case we completely remove the max_tokens parameter.
         reqParams.max_tokens = undefined;
       }
