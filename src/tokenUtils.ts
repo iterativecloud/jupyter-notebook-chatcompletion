@@ -31,25 +31,14 @@ export async function applyTokenReductions(
     apply: () => messages.map(strategy.reduce).filter((x) => x !== null),
   }));
 
-  const totalTokenCount = countTotalTokens(messages, model);
+  const totalTokenCount = countTokens(messages, model);
 
   for (const strategy of strategies) {
     const reducedMessages = await strategy.apply();
-    const reducedTokenCount = countTotalTokens(reducedMessages, model);
+    const reducedTokenCount = countTokens(reducedMessages, model);
     const savedTokens = totalTokenCount - reducedTokenCount;
     strategy.savedTokens = savedTokens;
     strategy.description = `${savedTokens} tokens`;
-  }
-
-  const maxPossibleSaving = strategies.map((x) => x.savedTokens ?? 0).reduce((prev, current) => prev + current);
-
-  if (maxPossibleSaving < tokenOverflowCount) {
-    window.showInformationMessage(
-      `If we applied every token reduction strategy available, you would still be ${
-        tokenOverflowCount - maxPossibleSaving
-      } over the limit of the '${model}' model. Please reduce the size of the content.`,
-      { modal: true }
-    );
   }
 
   const selectedStrategies = await window.showQuickPick(strategies, {
@@ -66,24 +55,25 @@ export async function applyTokenReductions(
     reducedMessages = await strategy.apply(reducedMessages);
   }
 
-  const reducedTokenCount = countTotalTokens(reducedMessages, model);
-  if (reducedTokenCount > limit) {
-    window.showErrorMessage(msgs.notEnoughSavings);
-    return null;
-  }
-
   return reducedMessages;
 }
 
-export function countTokens(text: string, model: TiktokenModel): number {
-  const enc = encoding_for_model(model);
-  const tokenCount = enc.encode(text).length;
-  enc.free();
-  return tokenCount;
-}
+export function countTokens(messages: any[], model: TiktokenModel): number {
+  const encoding = encoding_for_model(model);
+  let tokensPerMessage = 4;
+  let tokensPerName = 1;
 
-export function countTotalTokens(msgs: Message[], model: TiktokenModel): number {
-  return msgs.reduce((accumulator, message) => {
-    return accumulator + countTokens(message.content, model);
-  }, 0);
+  let numTokens = 0;
+  for (const message of messages) {
+    numTokens += tokensPerMessage;
+    for (const key in message) {
+      const value = message[key];
+      numTokens += encoding.encode(value).length;
+      if (key === "name") {
+        numTokens += tokensPerName;
+      }
+    }
+  }
+  numTokens += 3;
+  return numTokens;
 }

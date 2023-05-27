@@ -7,7 +7,7 @@ import { addParametersFromMetadata as addNotebookConfigParams, getOpenAIApiKey, 
 import { msgs } from "./constants";
 import { FinishReason } from "./finishReason";
 import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
-import { applyTokenReductions, countTokens, countTotalTokens } from "./tokenUtils";
+import { applyTokenReductions, countTokens } from "./tokenUtils";
 import { UIProgress, waitForUIDispatch } from "./uiProgress";
 import { TiktokenModel } from "@dqbd/tiktoken";
 
@@ -97,8 +97,7 @@ export async function generateCompletion(
   progress.report({ message: msgs.calculatingTokens, increment: 1 });
   await waitForUIDispatch();
 
-  const msgText = JSON.stringify(messages);
-  const totalTokenCount = countTokens(msgText, model);
+  const totalTokenCount = countTokens(messages, model);
 
   if (limit !== null && totalTokenCount > limit) {
     const tokenOverflow = totalTokenCount - limit;
@@ -123,8 +122,7 @@ export async function generateCompletion(
   };
 
   if (limit) {
-    const reducedMsgText = JSON.stringify(messages);
-    const reducedTokenCount = countTokens(reducedMsgText, model);
+    const reducedTokenCount = countTokens(messages, model);
     reqParams.max_tokens = limit - reducedTokenCount;
 
     if (reqParams.max_tokens < 1) {
