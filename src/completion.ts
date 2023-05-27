@@ -136,6 +136,10 @@ export async function generateCompletion(
       if (result !== "Yes") {
         return FinishReason.cancelled;
       }
+      else{
+        // The user still wants to send the requests despite the going over the limit. In that case we completely remove the max_tokens parameter.
+        reqParams.max_tokens = undefined;
+      }
     }
   }
 
