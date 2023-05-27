@@ -41,8 +41,6 @@ export async function applyTokenReductions(
     strategy.description = `${savedTokens} tokens`;
   }
 
-  // strategies = strategies.filter((s) => (s.savedTokens ? s.savedTokens > 1 : false));
-
   const maxPossibleSaving = strategies.map((x) => x.savedTokens ?? 0).reduce((prev, current) => prev + current);
 
   if (maxPossibleSaving < tokenOverflowCount) {
