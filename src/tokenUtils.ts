@@ -3,6 +3,11 @@ import { ChatCompletionRequestMessage as Message, ChatCompletionResponseMessageR
 import { QuickPickItem, window } from "vscode";
 import { msgs, uiText } from "./constants";
 
+function tabifyWhitespaces(message: Message): Message {
+  message.content = message.content.replace(/ {4}/g, "\t");
+  return message;
+}
+
 export async function applyTokenReductions(
   messages: Message[],
   tokenOverflowCount: number,
@@ -13,6 +18,7 @@ export async function applyTokenReductions(
     { label: uiText.removeOutput, reduce: (m) => (m.name === "Output" ? null : m) },
     { label: uiText.removeProblems, reduce: (m) => (m.name === "Problems" ? null : m) },
     { label: uiText.removeSystemMsg, reduce: (m) => (m.role === Role.System ? null : m) },
+    { label: uiText.tabifyWhiteSpaces, reduce: tabifyWhitespaces },
   ];
 
   type TokenReductionStrategy = QuickPickItem & {
@@ -35,7 +41,7 @@ export async function applyTokenReductions(
     strategy.description = `${savedTokens} tokens`;
   }
 
-  strategies = strategies.filter((s) => (s.savedTokens ? s.savedTokens > 1 : false));
+  // strategies = strategies.filter((s) => (s.savedTokens ? s.savedTokens > 1 : false));
 
   const maxPossibleSaving = strategies.map((x) => x.savedTokens ?? 0).reduce((prev, current) => prev + current);
 
@@ -50,7 +56,7 @@ export async function applyTokenReductions(
 
   const selectedStrategies = await window.showQuickPick(strategies, {
     canPickMany: true,
-    title: `You have ${tokenOverflowCount} more tokens than the model's limit of ${limit}`
+    title: `You have ${tokenOverflowCount} more tokens than the model's limit of ${limit}`,
   });
 
   if (!selectedStrategies) {

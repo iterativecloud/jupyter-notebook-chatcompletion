@@ -50,4 +50,5 @@ export const uiText = {
     removeOutput : "Remove all Cell Output",
     removeProblems: "Remove all VSCode Problems",
     removeSystemMsg: "Remove System Message",
+    tabifyWhiteSpaces: "Tabify whitespaces"
 };
