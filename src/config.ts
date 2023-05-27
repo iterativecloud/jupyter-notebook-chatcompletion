@@ -6,7 +6,7 @@ export async function getOpenAIApiKey(): Promise<string> {
   let apiKey = workspace.getConfiguration().get<string>(configKeys.openAiKey);
   if (!apiKey) {
     apiKey = await window.showInputBox({
-      ignoreFocusOut : true,
+      ignoreFocusOut: true,
       prompt: msgs.enterApiKey,
       validateInput: (value) => (value.trim().length > 0 ? null : msgs.apiKeyCannotBeEmpty),
     });
@@ -23,29 +23,19 @@ export async function getOpenAIApiKey(): Promise<string> {
 }
 
 export function getTokenLimit(model: string): number | null {
-  let limit: number | null = null;
-
-  switch (model) {
-    case "gpt-4":
-    case "gpt-4-0314":
-      limit = 8192;
-      break;
-
-    case "gpt-4-32k":
-    case "gpt-4-32k-0314":
-      limit = 32768;
-      break;
-
-    case "gpt-3.5-turbo":
-    case "gpt-3.5-turbo-0301":
-      limit = 4096;
-      break;
-
-    default:
-      break;
+  if (model.startsWith("gpt-4-32k")) {
+    return 32768;
   }
 
-  return limit;
+  if (model.startsWith("gpt-4")) {
+    return 8192;
+  }
+
+  if (model.startsWith("gpt-3.5")) {
+    return 4096;
+  }
+
+  return null;
 }
 
 export type ExtendedCreateChatCompletionRequest = CreateChatCompletionRequest & {
