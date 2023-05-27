@@ -1,7 +1,4 @@
-import {
-  ChatCompletionRequestMessage,
-  ChatCompletionRequestMessageRoleEnum,
-} from "openai";
+import { ChatCompletionRequestMessage, ChatCompletionRequestMessageRoleEnum } from "openai";
 import {
   NotebookCellKind,
   NotebookEdit,
@@ -16,14 +13,7 @@ import {
 } from "vscode";
 import { CompletionType } from "./completionType";
 
-const ADDITIONAL_PROMPT_INFO_MESSAGE =
-  "Select any additional information you want to include in the prompt";
-
-export async function appendTextToCell(
-  editor: NotebookEditor,
-  cellIndex: number,
-  textToken: string
-) {
+export async function appendTextToCell(editor: NotebookEditor, cellIndex: number, textToken: string) {
   const existingCell = editor.notebook.cellAt(cellIndex);
 
   // If the cell is empty, it doesn't make sense to add any superfluous linebreaks, tabs or whitespaces
@@ -44,31 +34,17 @@ export async function appendTextToCell(
   }
 
   const edit = new WorkspaceEdit();
-  edit.insert(
-    existingCell.document.uri,
-    existingCell.document.positionAt(9999999999),
-    textToken
-  );
+  edit.insert(existingCell.document.uri, existingCell.document.positionAt(9999999999), textToken);
   await workspace.applyEdit(edit);
 }
 
-export async function insertCell(
-  editor: NotebookEditor,
-  cellIndex: number,
-  cellKind: NotebookCellKind,
-  languageId: string = "markdown"
-) {
+export async function insertCell(editor: NotebookEditor, cellIndex: number, cellKind: NotebookCellKind, languageId: string = "markdown") {
   // Whenever we insert a cell, we remove any superfluous linebreaks in the previous cell
   const existingCell = editor.notebook.cellAt(cellIndex);
   if (existingCell.document.getText().endsWith("\n")) {
     const edit = new WorkspaceEdit();
     const lastLineRange = existingCell.document.validateRange(
-      new Range(
-        existingCell.document.lineCount - 2,
-        9999999999,
-        existingCell.document.lineCount,
-        0
-      )
+      new Range(existingCell.document.lineCount - 2, 9999999999, existingCell.document.lineCount, 0)
     );
 
     edit.delete(existingCell.document.uri, lastLineRange);
@@ -78,13 +54,9 @@ export async function insertCell(
   await commands.executeCommand("notebook.cell.quitEdit");
 
   if (cellKind === NotebookCellKind.Code && languageId === "python") {
-    await commands.executeCommand("notebook.cell.insertCodeCellBelow", [
-      { index: cellIndex },
-    ]);
+    await commands.executeCommand("notebook.cell.insertCodeCellBelow", [{ index: cellIndex }]);
   } else {
-    await commands.executeCommand("notebook.cell.insertMarkdownCellBelow", [
-      { index: cellIndex },
-    ]);
+    await commands.executeCommand("notebook.cell.insertMarkdownCellBelow", [{ index: cellIndex }]);
   }
 
   cellIndex++;
@@ -101,38 +73,27 @@ export async function insertCell(
   return cellIndex;
 }
 
-export async function convertCellsToMessages(
-  cellIndex: number,
-  completionType: CompletionType
-): Promise<ChatCompletionRequestMessage[]> {
+export async function convertCellsToMessages(cellIndex: number, completionType: CompletionType): Promise<ChatCompletionRequestMessage[]> {
   const editor = window.activeNotebookEditor!;
   const notebook = editor.notebook;
 
-  const startCellIndex =
-    completionType === CompletionType.currentCellAndAbove ? 0 : cellIndex;
+  const startCellIndex = completionType === CompletionType.currentCellAndAbove ? 0 : cellIndex;
 
   const diagnostics = languages
     .getDiagnostics()
     .filter(([uri]) => uri.path === notebook.uri.path)
     .flatMap(([, diag]) => diag);
 
-  const cellInfos = notebook
-    .getCells(new NotebookRange(startCellIndex, cellIndex + 1))
-    .map((cell) => {
-      const problems = diagnostics.filter(
-        (d) => cell.document.validateRange(d.range) === d.range
-      );
-      const nonImgOutputs = cell.outputs
-        .flatMap((o) => o.items.filter((i) => !i.mime.startsWith("image")))
-        .map((i) => i.data.toString());
-      return { cell, problems, nonImgOutputs };
-    });
+  const cellInfos = notebook.getCells(new NotebookRange(startCellIndex, cellIndex + 1)).map((cell) => {
+    const problems = diagnostics.filter((d) => cell.document.validateRange(d.range) === d.range);
+    const nonImgOutputs = cell.outputs.flatMap((o) => o.items.filter((i) => !i.mime.startsWith("image"))).map((i) => i.data.toString());
+    return { cell, problems, nonImgOutputs };
+  });
 
   var messages: ChatCompletionRequestMessage[] = [];
 
   cellInfos.forEach(({ cell, problems, nonImgOutputs }) => {
-    let role: ChatCompletionRequestMessageRoleEnum =
-      ChatCompletionRequestMessageRoleEnum.User;
+    let role: ChatCompletionRequestMessageRoleEnum = ChatCompletionRequestMessageRoleEnum.User;
     const tags: string[] = cell.metadata?.custom?.metadata?.tags;
 
     if (tags && tags.length > 0) {
@@ -145,15 +106,13 @@ export async function convertCellsToMessages(
       cellContent = `\`\`\`python \n${cellContent}\n\`\`\``;
     }
 
-    messages.push({ role: role, content: cellContent, name: cell.kind.toString()});
+    messages.push({ role: role, content: cellContent, name: cell.kind.toString() });
 
     if (problems.length > 0) {
       messages.push({
         role: role ?? "user",
         name: "Problems",
-        content:
-          "Problems reported by VSCode from previous code:\n" +
-          problems.map((p) => `${p.code}: ${p.message}`),
+        content: "Problems reported by VSCode from previous code:\n" + problems.map((p) => `${p.code}: ${p.message}`),
       });
     }
 
@@ -168,17 +127,14 @@ export async function convertCellsToMessages(
     }
   });
 
-  const systemMessages = messages.filter(
-    (m) => m.role === ChatCompletionRequestMessageRoleEnum.System
-  );
+  const systemMessages = messages.filter((m) => m.role === ChatCompletionRequestMessageRoleEnum.System);
 
   // We only add a system message if none was defined
   if (systemMessages.length === 0) {
     messages.push({
       role: ChatCompletionRequestMessageRoleEnum.System,
       name: ChatCompletionRequestMessageRoleEnum.System,
-      content:
-        "Format your answer as markdown. If you include a markdown code block, specify the language.",
+      content: "Format your answer as markdown. If you include a markdown code block, specify the language.",
     });
   }
 
