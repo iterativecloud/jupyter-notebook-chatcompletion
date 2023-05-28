@@ -16,7 +16,7 @@ export const msgs = {
   notEnoughSavings: "The selected strategies do not reduce tokens below the limit.",
   calculatingTokeReductions: "Token limit reached. Calculating potential reductions...",
   calculatingTokens: "Calculating tokens...",
-  modelNotSet: "You must choose a valid model before proceeding."
+  modelNotSet: "You must choose a valid model before proceeding.",
 };
 
 export const prompts = {
@@ -44,8 +44,10 @@ export const configKeys = {
 };
 
 export const uiText = {
-    removeOutput : "Remove all Cell Output",
-    removeProblems: "Remove all VSCode Problems",
-    removeSystemMsg: "Remove System Message",
-    tabifyWhiteSpaces: "Tabify whitespaces"
+  removeOutput: "Remove all Cell Output",
+  removeProblems: "Remove all VSCode Problems",
+  removeSystemMsg: "Remove System Message",
+  tabifyWhiteSpaces: "Tabify whitespaces",
 };
+
+export const polyglotLanguageIds = ["csharp", "fsharp", "powershell", "javascript", "mermaid", "sql", "kql", "html"];

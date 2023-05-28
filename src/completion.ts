@@ -4,7 +4,7 @@ import { CancellationToken, NotebookCellKind, NotebookEdit, NotebookRange, Works
 import { appendTextToCell, convertCellsToMessages, insertCell } from "./cellUtils";
 import { CompletionType } from "./completionType";
 import { addParametersFromMetadata as addNotebookConfigParams, getOpenAIApiKey, getTokenLimit } from "./config";
-import { msgs } from "./constants";
+import { msgs, polyglotLanguageIds } from "./constants";
 import { FinishReason } from "./finishReason";
 import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
 import { applyTokenReductions, countTokens } from "./tokenUtils";
@@ -44,14 +44,13 @@ async function streamResponse(
       throw new Error(`Unknown stream result: ${textToken}`);
     }
 
-    if (textToken.includes("```python\n")) {
+    if (polyglotLanguageIds.map((x) => "```" + x).some((x) => typeof textToken === "string" && textToken.includes(x))) {
       ck = NotebookCellKind.Code;
-
-      cellIndex = await insertCell(editor, cellIndex, ck, "python");
-      textToken = textToken.replace("```python\n", "");
+      const languageId = textToken.replace("```", "").trim();
+      cellIndex = await insertCell(editor, cellIndex, ck, languageId);
+      textToken = textToken.replace("```" + languageId + "\n", "");
     } else if (textToken.includes("```") && ck === NotebookCellKind.Code) {
       textToken = textToken.replace("```", "");
-
       ck = NotebookCellKind.Markup;
       cellIndex = await insertCell(editor, cellIndex, ck);
     }

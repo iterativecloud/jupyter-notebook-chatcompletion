@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 import { ChatCompletionRequestMessage, ChatCompletionRequestMessageRoleEnum } from "openai";
 import {
   NotebookCellKind,
@@ -12,6 +13,8 @@ import {
   workspace,
 } from "vscode";
 import { CompletionType } from "./completionType";
+import { polyglotLanguageIds } from "./constants";
+import { log } from "console";
 
 export async function appendTextToCell(editor: NotebookEditor, cellIndex: number, textToken: string) {
   const existingCell = editor.notebook.cellAt(cellIndex);
@@ -53,8 +56,24 @@ export async function insertCell(editor: NotebookEditor, cellIndex: number, cell
 
   await commands.executeCommand("notebook.cell.quitEdit");
 
-  if (cellKind === NotebookCellKind.Code && languageId === "python") {
+  let languageIds: string[] = ["python"];
+
+  if (editor.notebook.metadata?.custom?.metadata?.polyglot_notebook) {
+    languageIds = polyglotLanguageIds;
+  }
+
+  // Note that we MUST use commands instead of creating cell as part of an edit command, otherwise
+  // we won't get the behavior that the previous cell automatically leaves edit mode, which leads to a bad user experience
+  if (cellKind === NotebookCellKind.Code && languageIds.includes(languageId)) {
     await commands.executeCommand("notebook.cell.insertCodeCellBelow", [{ index: cellIndex }]);
+    const newCell = editor.notebook.cellAt(editor.selection.end);
+
+    try {
+      await languages.setTextDocumentLanguage(newCell.document, languageId);
+    } catch (e) {
+      console.warn(`setTextDocumentLanguage failed with '${languageId}': ${e}`);
+      await languages.setTextDocumentLanguage(newCell.document, "plaintext");
+    }
   } else {
     await commands.executeCommand("notebook.cell.insertMarkdownCellBelow", [{ index: cellIndex }]);
   }
@@ -65,7 +84,17 @@ export async function insertCell(editor: NotebookEditor, cellIndex: number, cell
   let cell = editor.notebook.cellAt(cellIndex);
   edit.set(cell.notebook.uri, [
     NotebookEdit.updateCellMetadata(cell.index, {
-      custom: { metadata: { tags: ["assistant"] } },
+      ...cell.metadata,
+      custom: {
+        ...cell.metadata?.custom,
+        metadata: {
+          ...cell.metadata?.custom?.tags,
+          vscode: { languageId: languageId },
+          polyglot_notebook: { kernelName: languageId },
+          dotnet_interactive: { language: languageId },
+          tags: ["assistant"],
+        },
+      },
     }),
   ]);
   await workspace.applyEdit(edit);
