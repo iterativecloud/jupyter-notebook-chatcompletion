@@ -4,7 +4,7 @@ import { QuickPickItem, window } from "vscode";
 import { msgs, uiText } from "./constants";
 
 function tabifyWhitespaces(message: Message): Message {
-  message.content = message.content.replace(/ {4}/g, "\t");
+  message.content = message.content!.replace(/ {4}/g, "\t");
   return message;
 }
 
