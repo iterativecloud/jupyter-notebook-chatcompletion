@@ -31,6 +31,10 @@ export function getTokenLimit(model: string): number | null {
     return 8192;
   }
 
+  if (model.startsWith("gpt-3.5-turbo-16k")) {
+    return 16384;
+  }
+
   if (model.startsWith("gpt-3.5")) {
     return 4096;
   }

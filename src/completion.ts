@@ -69,6 +69,23 @@ async function streamResponse(
   return FinishReason.length;
 }
 
+function getValidAlternativeIfAvailable(model: string): TiktokenModel {
+  // For new models we know already exists but are not yet known by Tiktoken (needs update), we choose a valid alternative model ourselves.
+  switch (model) {
+    case "gpt-3.5-turbo-16k-0613":
+    case "gpt-3.5-turbo-0613":
+    case "gpt-3.5-turbo-16k":
+      return "gpt-3.5-turbo";
+
+    case "gpt-4-0613":
+    case "gpt-4-32k-0613":
+      return "gpt-4";
+
+    default:
+      return model as TiktokenModel;
+  }
+}
+
 export async function generateCompletion(
   cellIndex: number,
   completionType: CompletionType,
@@ -102,27 +119,41 @@ export async function generateCompletion(
   }
 
   const model: TiktokenModel = nbMetadata?.model;
+  let knownTikTokenModel: TiktokenModel = getValidAlternativeIfAvailable(model);
+
   const temperature = nbMetadata?.temperature ?? 0;
   const limit = getTokenLimit(model);
 
   progress.report({ message: msgs.calculatingTokens, increment: 1 });
   await waitForUIDispatch();
 
-  const totalTokenCount = countTokens(messages, model);
+  let skipTokenization = false;
 
-  if (limit !== null && totalTokenCount > limit) {
-    const tokenOverflow = totalTokenCount - limit;
+  try {
+    const totalTokenCount = countTokens(messages, knownTikTokenModel);
 
-    progress.report({ message: msgs.calculatingTokeReductions, increment: 1 });
-    await waitForUIDispatch();
+    if (limit !== null && totalTokenCount > limit) {
+      const tokenOverflow = totalTokenCount - limit;
 
-    const reducedMessages = await applyTokenReductions(messages, tokenOverflow, limit, model);
+      progress.report({ message: msgs.calculatingTokeReductions, increment: 1 });
+      await waitForUIDispatch();
 
-    if (!reducedMessages) {
-      return FinishReason.cancelled;
+      const reducedMessages = await applyTokenReductions(messages, tokenOverflow, limit, knownTikTokenModel);
+
+      if (!reducedMessages) {
+        return FinishReason.cancelled;
+      }
+
+      messages = reducedMessages;
     }
-
-    messages = reducedMessages;
+  } catch (error: any) {
+    skipTokenization = true;
+    await window.showWarningMessage("Error while counting tokens - skipping token limit checks", {
+      modal: true,
+      detail:
+        "This can happen with newer, unknown models (this extension has to be updated). Checking for token limits and suggesting token reduction strategies will be skipped.\n" +
+        error.message,
+    });
   }
 
   let reqParams: CreateChatCompletionRequest = {
@@ -133,10 +164,12 @@ export async function generateCompletion(
   };
 
   if (limit) {
-    const reducedTokenCount = countTokens(messages, model);
-    reqParams.max_tokens = limit - reducedTokenCount;
+    if (!skipTokenization) {
+      const reducedTokenCount = countTokens(messages, knownTikTokenModel);
+      reqParams.max_tokens = limit - reducedTokenCount;
+    }
 
-    if (reqParams.max_tokens < 1) {
+    if (reqParams.max_tokens && reqParams.max_tokens < 1) {
       const result = await window.showInformationMessage(
         `The request is estimated to be ${-reqParams.max_tokens} tokens over the limit (including the input) and will likely be rejected from the OpenAI API. Do you still want to proceed?`,
         { modal: true },
