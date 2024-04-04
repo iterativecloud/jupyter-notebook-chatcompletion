@@ -1,23 +1,26 @@
 import { TiktokenModel, encoding_for_model } from "@dqbd/tiktoken";
-import { ChatCompletionRequestMessage as Message, ChatCompletionResponseMessageRoleEnum as Role } from "openai";
 import { QuickPickItem, window } from "vscode";
-import { msgs, uiText } from "./constants";
+import { ChatCompletionMessageParamEx } from "./chatCompletionMessageParamEx";
+import { uiText } from "./constants";
 
-function tabifyWhitespaces(message: Message): Message {
-  message.content = message.content!.replace(/ {4}/g, "\t");
+function tabifyWhitespaces(message: ChatCompletionMessageParamEx): ChatCompletionMessageParamEx {
+  if(message.content instanceof String )
+  {
+    message.content = message.content!.replace(/ {4}/g, "\t");
+  }
   return message;
 }
 
 export async function applyTokenReductions(
-  messages: Message[],
+  messages: ChatCompletionMessageParamEx[],
   tokenOverflowCount: number,
   limit: number,
   model: TiktokenModel
-): Promise<Message[] | null> {
-  const replacements: { label: string; reduce: (arg1: Message) => Message | null }[] = [
+): Promise<ChatCompletionMessageParamEx[] | null> {
+  const replacements: { label: string; reduce: (arg1: ChatCompletionMessageParamEx) => ChatCompletionMessageParamEx | null }[] = [
     { label: uiText.removeOutput, reduce: (m) => (m.name === "Output" ? null : m) },
     { label: uiText.removeProblems, reduce: (m) => (m.name === "Problems" ? null : m) },
-    { label: uiText.removeSystemMsg, reduce: (m) => (m.role === Role.System ? null : m) },
+    { label: uiText.removeSystemMsg, reduce: (m) => (m.role === "system" ? null : m) },
     { label: uiText.tabifyWhiteSpaces, reduce: tabifyWhitespaces },
   ];
 

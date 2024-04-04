@@ -1,21 +1,22 @@
-import axios, { AxiosResponse } from "axios";
-import { Configuration, CreateChatCompletionRequest, CreateChatCompletionResponse, OpenAIApi } from "openai";
+import { TiktokenModel } from "@dqbd/tiktoken";
+import OpenAI from "openai";
+import { ChatCompletionChunk } from "openai/resources";
+import { Stream } from "openai/streaming";
 import { CancellationToken, NotebookCellKind, NotebookEdit, NotebookRange, WorkspaceEdit, window, workspace } from "vscode";
 import { appendTextToCell, convertCellsToMessages, insertCell } from "./cellUtils";
 import { CompletionType } from "./completionType";
 import { addParametersFromMetadata as addNotebookConfigParams, getOpenAIApiKey, getTokenLimit } from "./config";
 import { msgs } from "./constants";
+import { setModel } from "./extension";
 import { FinishReason } from "./finishReason";
 import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
 import { applyTokenReductions, countTokens } from "./tokenUtils";
 import { UIProgress, waitForUIDispatch } from "./uiProgress";
-import { TiktokenModel } from "@dqbd/tiktoken";
-import { setModel } from "./extension";
 
 const output = window.createOutputChannel("Notebook ChatCompletion");
 
 async function streamResponse(
-  response: AxiosResponse<CreateChatCompletionResponse, any>,
+  responseStream: Stream<ChatCompletionChunk>,
   cancelToken: CancellationToken,
   cellIndex: number,
   ck: NotebookCellKind | undefined,
@@ -24,7 +25,7 @@ async function streamResponse(
   const editor = window.activeNotebookEditor!;
   output.show(true);
 
-  for await (let textToken of bufferWholeChunks(streamChatCompletion(response, cancelToken))) {
+  for await (let textToken of bufferWholeChunks(streamChatCompletion(responseStream, cancelToken))) {
     if (Object.values(FinishReason).includes(textToken as FinishReason)) {
       const currentCell = window.activeNotebookEditor!.notebook.cellAt(cellIndex);
       const text = currentCell.document.getText();
@@ -102,10 +103,7 @@ export async function generateCompletion(
     throw new Error(msgs.apiKeyNotSet);
   }
 
-  const openai = new OpenAIApi(new Configuration({ apiKey: openaiApiKey }));
-
-  const tokenSource = axios.CancelToken.source();
-  cancelToken.onCancellationRequested(tokenSource.cancel);
+  const openai = new OpenAI({ apiKey: openaiApiKey });
 
   let nbMetadata = e.notebook.metadata.custom;
 
@@ -148,19 +146,19 @@ export async function generateCompletion(
     }
   } catch (error: any) {
     skipTokenization = true;
-    await window.showWarningMessage("Error while counting tokens - skipping token limit checks", {
-      modal: true,
+    window.showWarningMessage("Error while counting tokens - skipping token limit checks", {
+      modal: false,
       detail:
-        "This can happen with newer, unknown models (this extension has to be updated). Checking for token limits and suggesting token reduction strategies will be skipped.\n" +
+        "We couldn't count the tokens. This can happen for newer, unknown models (this extension has to be updated).\n" +
         error.message,
     });
   }
 
-  let reqParams: CreateChatCompletionRequest = {
+  let reqParams: OpenAI.Chat.ChatCompletionCreateParamsStreaming = {
     model: model,
     messages: messages,
-    stream: true,
     temperature: temperature,
+    stream: true
   };
 
   if (limit) {
@@ -189,10 +187,7 @@ export async function generateCompletion(
   output.appendLine("\n" + JSON.stringify(reqParams, undefined, 2) + "\n");
   progress.report({ increment: 1, message: msgs.sendingRequest });
 
-  const response = await openai.createChatCompletion(reqParams, {
-    cancelToken: tokenSource.token,
-    responseType: "stream",
-  });
-
-  return await streamResponse(response, cancelToken, cellIndex, ck, progress);
+  const stream = await openai.chat.completions.create(reqParams);
+  
+  return await streamResponse(stream , cancelToken, cellIndex, ck, progress);
 }

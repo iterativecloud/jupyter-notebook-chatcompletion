@@ -1,13 +1,12 @@
-import axios from "axios";
 import { ExtensionContext, NotebookEdit, NotebookRange, ProgressLocation, WorkspaceEdit, commands, window, workspace } from "vscode";
 import { generateCompletion } from "./completion";
 import { CompletionType } from "./completionType";
 import { FinishReason } from "./finishReason";
-import { ChatCompletionRequestMessageRoleEnum as Roles, OpenAIApi, Configuration } from "openai";
+import OpenAI from "openai";
 import { errorMessages, msgs, prompts } from "./constants";
 import { waitForUIDispatch } from "./uiProgress";
 import { getOpenAIApiKey } from "./config";
-import { TiktokenModel } from "@dqbd/tiktoken";
+import { ChatCompletionRole } from "openai/resources";
 
 export async function activate(ctx: ExtensionContext) {
   const regCmd = (cmd: string, handler: (...args: any[]) => any) =>
@@ -15,8 +14,8 @@ export async function activate(ctx: ExtensionContext) {
 
   regCmd("sendCellAndAbove", (...args) => genCells(args, CompletionType.currentCellAndAbove));
   regCmd("sendCell", (...args) => genCells(args, CompletionType.currentCell));
-  regCmd("setRoleAssistant", () => setRole(Roles.Assistant));
-  regCmd("setRoleSystem", () => setRole(Roles.System));
+  regCmd("setRoleAssistant", () => setRole("assistant"));
+  regCmd("setRoleSystem", () => setRole("system"));
   regCmd("setModel", setModel);
   regCmd("setTemperature", () => setParam(prompts.temperature, "temperature", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat));
   regCmd("setTopP", () => setParam(prompts.topP, "top_p", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat));
@@ -92,10 +91,6 @@ async function genCells(args: any, completionType: CompletionType) {
           return;
         }
 
-        if (e instanceof axios.Cancel) {
-          window.showInformationMessage(`${msgs.compCancelled}: ${e.message}`);
-          return;
-        }
         let detail = "";
         if (e.response) {
           switch (e.response.status) {
@@ -133,9 +128,9 @@ export async function setModel() : Promise<string | undefined> {
     throw new Error(msgs.apiKeyNotSet);
   }
 
-  const openai = new OpenAIApi(new Configuration({ apiKey: openaiApiKey }));
+  const openai = new OpenAI({ apiKey: openaiApiKey });
 
-  const models = (await openai.listModels()).data.data.map(
+  const models = (await openai.models.list()).data.map(
     (x) => x.id).filter(x => x.startsWith("gpt"));
 
   const model = await window.showQuickPick(models, {
@@ -181,7 +176,7 @@ async function setParam(prompt: string, key: string, validateFn: (v: string) => 
   }
 }
 
-async function setRole(role: Roles) {
+async function setRole(role: ChatCompletionRole) {
   const editor = window.activeNotebookEditor!;
   const cell = editor.notebook.cellAt(editor.selection.end - 1);
   const edit = new WorkspaceEdit();
