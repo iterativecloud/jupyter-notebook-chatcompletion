@@ -1,54 +1,45 @@
-import axios, { AxiosResponse } from "axios";
-import { CreateChatCompletionResponse } from "openai";
-import { CancellationToken, window } from "vscode";
+import { ChatCompletionChunk } from "openai/resources";
+import { Stream } from "openai/streaming";
+import { CancellationError, CancellationToken } from "vscode";
 import { FinishReason } from "./finishReason";
 
 export async function* streamChatCompletion(
-  response: AxiosResponse<CreateChatCompletionResponse, AsyncIterable<Buffer>>,
+  responseStream: Stream<ChatCompletionChunk>,
   token: CancellationToken
 ): AsyncGenerator<string | FinishReason, void, undefined> {
-  // types are unfortunately not well defined so we have to cast to unknown first to get an AsyncIterable<T>
-  const dataStream = response.data as unknown as AsyncIterable<Buffer>;
-
-  for await (const chunk of dataStream) {
+  for await (const part of responseStream) {
     if (token.isCancellationRequested) {
-      throw new axios.Cancel("ChatCompletion API request cancelled by user");
+      yield FinishReason.cancelled;
     }
 
-    const lines = chunk
-      .toString("utf8")
-      .split("\n")
-      .filter((line) => line.trim().startsWith("data: "));
-
-    for (const line of lines) {
-      const message = line.replace(/^data: /, "");
-      const json = JSON.parse(message);
-
-      const content = json.choices[0].delta.content;
+    try {
+      const content = part.choices[0].delta.content;
 
       if (content !== undefined && content !== "") {
-        yield content;
+        yield content ?? FinishReason.null;
       }
 
-      const finishReason = json.choices[0].finish_reason;
+      const finishReason = part.choices[0].finish_reason;
 
       switch (finishReason) {
         case "length": // Incomplete model output due to max_tokens parameter or token limit
           yield FinishReason.length;
 
         case "content_filter": // Omitted content due to a flag from OpenAI content filters
-        yield FinishReason.contentFilter;
+          yield FinishReason.contentFilter;
 
         case "stop": // API returned complete model output.
           yield FinishReason.stop;
           return;
         case null:
         case undefined:
-        case "null": // API response still in progress or incomplete
-          continue;
-        default: // API returned a stop_reason unknown to us
-          throw new Error("Unhandled stop_reason:" + finishReason);
+          continue; // API response still in progress or incomplete
+        default: // API returned a FinishReason unknown to us
+          throw new Error("Unhandled FinishReason:" + finishReason);
       }
+    } catch (error) {
+      console.error("Error parsing response stream:", error);
+      throw error;
     }
   }
 }
@@ -77,14 +68,7 @@ export async function* bufferWholeChunks(
       buffer += value;
     } else {
       if (buffer.length > 0) {
-        if (typeof value === "string") {
-          yield buffer + value;
-        } else {
-          if (buffer !== "") {
-            yield buffer;
-          }
-          yield value;
-        }
+        yield buffer + (typeof value === "string" ? value : "");
         buffer = "";
       } else {
         yield value;
