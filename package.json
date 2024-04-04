@@ -2,7 +2,7 @@
   "name": "notebook-chatcompletion",
   "displayName": "Jupyter Notebook ChatCompletion",
   "description": "Jupyter Notebook ChatCompletion is VSCode extension that brings the power of OpenAI's ChatCompletion API to your Jupyter Notebooks!",
-  "version": "0.0.26",
+  "version": "0.0.27",
   "author": {
     "name": "Alexandre De Riemaecker",
     "url": "https://www.iterative.cloud"
