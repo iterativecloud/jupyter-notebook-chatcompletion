@@ -9,45 +9,58 @@ export async function* streamChatCompletion(
 ): AsyncGenerator<string | FinishReason, void, undefined> {
   // types are unfortunately not well defined so we have to cast to unknown first to get an AsyncIterable<T>
   const dataStream = response.data as unknown as AsyncIterable<Buffer>;
+  let buffer = ""; // Buffer to accumulate chunks
 
   for await (const chunk of dataStream) {
     if (token.isCancellationRequested) {
       throw new axios.Cancel("ChatCompletion API request cancelled by user");
     }
 
-    const lines = chunk
-      .toString("utf8")
-      .split("\n")
-      .filter((line) => line.trim().startsWith("data: "));
+    // Accumulate chunk into buffer
+    buffer += chunk.toString("utf8");
 
-    for (const line of lines) {
+    // Check buffer for complete lines (JSON documents)
+    let newlineIndex;
+    while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1); // Remove processed line from buffer
+
+      if (!line.startsWith("data: ")) {
+        continue; // Ignore if not starting with 'data: '
+      } 
+
       const message = line.replace(/^data: /, "");
-      const json = JSON.parse(message);
+      try {
+        const json = JSON.parse(message); // Parse the complete JSON document
 
-      const content = json.choices[0].delta.content;
+        const content = json.choices[0].delta.content;
 
-      if (content !== undefined && content !== "") {
-        yield content;
-      }
+        if (content !== undefined && content !== "") {
+          yield content;
+        }
 
-      const finishReason = json.choices[0].finish_reason;
+        const finishReason = json.choices[0].finish_reason;
 
-      switch (finishReason) {
-        case "length": // Incomplete model output due to max_tokens parameter or token limit
-          yield FinishReason.length;
+        switch (finishReason) {
+          case "length": // Incomplete model output due to max_tokens parameter or token limit
+            yield FinishReason.length;
 
-        case "content_filter": // Omitted content due to a flag from OpenAI content filters
-        yield FinishReason.contentFilter;
+          case "content_filter": // Omitted content due to a flag from OpenAI content filters
+            yield FinishReason.contentFilter;
 
-        case "stop": // API returned complete model output.
-          yield FinishReason.stop;
-          return;
-        case null:
-        case undefined:
-        case "null": // API response still in progress or incomplete
-          continue;
-        default: // API returned a stop_reason unknown to us
-          throw new Error("Unhandled stop_reason:" + finishReason);
+          case "stop": // API returned complete model output.
+            yield FinishReason.stop;
+            return;
+          case null:
+          case undefined:
+          case "null": // API response still in progress or incomplete
+            continue;
+          default: // API returned a stop_reason unknown to us
+            throw new Error("Unhandled stop_reason:" + finishReason);
+        }
+      } catch (error) {
+        console.error("Error parsing JSON from chunk:", error);
+        // Consider what to do with partial data here, if anything
       }
     }
   }
@@ -77,14 +90,7 @@ export async function* bufferWholeChunks(
       buffer += value;
     } else {
       if (buffer.length > 0) {
-        if (typeof value === "string") {
-          yield buffer + value;
-        } else {
-          if (buffer !== "") {
-            yield buffer;
-          }
-          yield value;
-        }
+        yield buffer + (typeof value === "string" ? value : "");
         buffer = "";
       } else {
         yield value;
