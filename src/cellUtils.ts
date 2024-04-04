@@ -1,4 +1,3 @@
-import { ChatCompletionRequestMessage, ChatCompletionRequestMessageRoleEnum } from "openai";
 import {
   NotebookCellKind,
   NotebookEdit,
@@ -11,6 +10,8 @@ import {
   window,
   workspace,
 } from "vscode";
+import { ChatCompletionMessageParamEx } from "./chatCompletionMessageParamEx";
+import { ChatCompletionRole } from "./chatCompletionRole";
 import { CompletionType } from "./completionType";
 
 export async function appendTextToCell(editor: NotebookEditor, cellIndex: number, textToken: string) {
@@ -73,7 +74,7 @@ export async function insertCell(editor: NotebookEditor, cellIndex: number, cell
   return cellIndex;
 }
 
-export async function convertCellsToMessages(cellIndex: number, completionType: CompletionType): Promise<ChatCompletionRequestMessage[]> {
+export async function convertCellsToMessages(cellIndex: number, completionType: CompletionType): Promise<ChatCompletionMessageParamEx[]> {
   const editor = window.activeNotebookEditor!;
   const notebook = editor.notebook;
 
@@ -90,14 +91,14 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
     return { cell, problems, nonImgOutputs };
   });
 
-  var messages: ChatCompletionRequestMessage[] = [];
+  var messages: ChatCompletionMessageParamEx[] = [];
 
   cellInfos.forEach(({ cell, problems, nonImgOutputs }) => {
-    let role: ChatCompletionRequestMessageRoleEnum = ChatCompletionRequestMessageRoleEnum.User;
+    let role: ChatCompletionRole = "user";
     const tags: string[] = cell.metadata?.custom?.metadata?.tags;
 
     if (tags && tags.length > 0) {
-      role = tags[0] as ChatCompletionRequestMessageRoleEnum;
+      role = tags[0] as ChatCompletionRole;
     }
 
     let cellContent = cell.document.getText();
@@ -106,7 +107,7 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
       cellContent = `\`\`\`python \n${cellContent}\n\`\`\``;
     }
 
-    messages.push({ role: role, content: cellContent, name: cell.kind.toString() });
+    messages.push({ role: role as never, content: cellContent, name: cell.kind.toString() });
 
     if (problems.length > 0) {
       messages.push({
@@ -127,13 +128,13 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
     }
   });
 
-  const systemMessages = messages.filter((m) => m.role === ChatCompletionRequestMessageRoleEnum.System);
+  const systemMessages = messages.filter((m) => m.role === "system");
 
   // We only add a system message if none was defined
   if (systemMessages.length === 0) {
     messages.push({
-      role: ChatCompletionRequestMessageRoleEnum.System,
-      name: ChatCompletionRequestMessageRoleEnum.System,
+      role: "system",
+      name: "system",
       content: "Format your answer as markdown. If you include a markdown code block, specify the language.",
     });
   }

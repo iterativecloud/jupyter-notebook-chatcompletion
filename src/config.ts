@@ -1,4 +1,4 @@
-import { CreateChatCompletionRequest } from "openai";
+import OpenAI from "openai";
 import { ConfigurationTarget, window, workspace } from "vscode";
 import { configKeys, msgs } from "./constants";
 
@@ -42,11 +42,11 @@ export function getTokenLimit(model: string): number | null {
   return null;
 }
 
-export type ExtendedCreateChatCompletionRequest = CreateChatCompletionRequest & {
+export type ExtendedCreateChatCompletionRequest = OpenAI.Chat.ChatCompletionCreateParamsStreaming & {
   [key: string]: any;
 };
 
-export function addParametersFromMetadata(nbMetadata: any, reqParams: CreateChatCompletionRequest) {
+export function addParametersFromMetadata(nbMetadata: any, reqParams: OpenAI.Chat.ChatCompletionCreateParamsStreaming) {
   const requestParams = ["top_p", "n", "max_tokens", "presence_penalty", "frequency_penalty", "logit_bias", "user"];
 
   const extendedReqParams: ExtendedCreateChatCompletionRequest = reqParams;
