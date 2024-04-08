@@ -3,5 +3,6 @@ export enum FinishReason {
   contentFilter,
   stop,
   null,
-  cancelled
+  cancelled,
+  toolsCall
 }

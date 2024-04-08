@@ -1,12 +1,26 @@
-import { ExtensionContext, NotebookEdit, NotebookRange, ProgressLocation, WorkspaceEdit, commands, window, workspace } from "vscode";
-import { generateCompletion } from "./completion";
-import { CompletionType } from "./completionType";
-import { FinishReason } from "./finishReason";
 import OpenAI from "openai";
-import { errorMessages, msgs, prompts } from "./constants";
-import { waitForUIDispatch } from "./uiProgress";
+import { ChatCompletionChunk, ChatCompletionRole } from "openai/resources";
+import {
+  CancellationToken,
+  ExtensionContext,
+  NotebookEdit,
+  NotebookRange,
+  ProgressLocation,
+  QuickPickItem,
+  WorkspaceEdit,
+  commands,
+  window,
+  workspace,
+} from "vscode";
+import { CompletionType } from "./completionType";
 import { getOpenAIApiKey } from "./config";
-import { ChatCompletionRole } from "openai/resources";
+import { errorMessages, msgs, prompts, tools } from "./constants";
+import { FinishReason } from "./finishReason";
+import { generateCompletion } from "./generateCompletion";
+import { ToolCallWithResult } from "./toolCallWithResult";
+import { waitForUIDispatch } from "./uiProgress";
+import { output } from "./completion";
+import { ToolCall } from "openai/resources/beta/threads/runs/steps";
 
 export async function activate(ctx: ExtensionContext) {
   const regCmd = (cmd: string, handler: (...args: any[]) => any) =>
@@ -59,29 +73,73 @@ async function genCells(args: any, completionType: CompletionType) {
     },
     async (progress, cancelToken) => {
       try {
-        await waitForUIDispatch();
+        let functionCallResults: ToolCallWithResult[] = [];
+        let finishReasonOrToolsCall: FinishReason | ChatCompletionChunk.Choice.Delta.ToolCall[] = FinishReason.null;
 
-        let finishReason = FinishReason.null;
-        finishReason = await generateCompletion(cellIndex, completionType, progress, cancelToken);
-        await commands.executeCommand("notebook.cell.quitEdit");
+        do {
+          if (cancelToken.isCancellationRequested) {
+            return;
+          }
 
-        switch (finishReason) {
-          case FinishReason.length:
-          case FinishReason.stop:
-            window.showInformationMessage(msgs.compCompleted);
-            progress.report({ increment: 100 });
-            break;
-          case FinishReason.cancelled:
-            window.showInformationMessage(msgs.compCancelled);
-            progress.report({ increment: 100 });
-            break;
-          case FinishReason.contentFilter:
-            window.showErrorMessage(msgs.apiViolation);
-            progress.report({ increment: 100 });
-            break;
-          default:
-            throw new Error(errorMessages.unhandledFinishReason);
-        }
+          await waitForUIDispatch();
+          // Send the request to OpenAI and generate completions or functional calls
+          finishReasonOrToolsCall = await generateCompletion(cellIndex, completionType, progress, functionCallResults, cancelToken);
+
+          // Make sure the last generated cell will switch from edit mode to normal mode (markdown will be rendered instead of showing markdown code)
+          await commands.executeCommand("notebook.cell.quitEdit");
+
+          // Any previously existing function call results have now been used and can be cleared
+          functionCallResults = [];
+
+          // If we received function call requests in the response, we execute them and save the results for the next loop run that will send them in a new request
+          if (Array.isArray(finishReasonOrToolsCall) && finishReasonOrToolsCall.length > 0) {
+            let toolsCalls: ChatCompletionChunk.Choice.Delta.ToolCall[] = finishReasonOrToolsCall;
+            const promiseArray: Promise<any>[] = []; // Array to hold all the promises.
+
+            const toolsCallsWithUserDecision = await promptToolExecutions(toolsCalls, cancelToken);
+
+            for (const toolCall of toolsCallsWithUserDecision) {
+              for (const tool of tools) {
+                if (toolCall.function?.name === tool.toolName) {
+                  // If there is already a (negative) result because the user declined the execution, we don't execute the tool call
+                  const promise = toolCall.result === "" ? tool.executeToolCall(toolCall) : Promise.resolve(toolCall);
+                  promise.then((result) => {
+                    output.appendLine("___Tool call result___________________________");
+                    output.appendLine(JSON.stringify(result.result));
+                  });
+
+                  promiseArray.push(promise);
+                }
+              }
+
+              functionCallResults = await Promise.all(promiseArray);
+            }
+
+            continue;
+          }
+
+          switch (finishReasonOrToolsCall) {
+            case FinishReason.toolsCall:
+              window.showInformationMessage("The model requested a local function execution");
+              progress.report({ increment: 10 });
+            case FinishReason.null:
+            case FinishReason.length:
+            case FinishReason.stop:
+              window.showInformationMessage(msgs.compCompleted);
+              progress.report({ increment: 100 });
+              break;
+            case FinishReason.cancelled:
+              window.showInformationMessage(msgs.compCancelled);
+              progress.report({ increment: 100 });
+              break;
+            case FinishReason.contentFilter:
+              window.showErrorMessage(msgs.apiViolation);
+              progress.report({ increment: 100 });
+              break;
+            default:
+              throw new Error(errorMessages.unhandledFinishReason);
+          }
+        } while (finishReasonOrToolsCall === FinishReason.null || Array.isArray(finishReasonOrToolsCall));
       } catch (e: any) {
         if (e.code && e.code === "ECONNRESET") {
           window.showErrorMessage(`${msgs.compFailed}: ${e.message}`, {
@@ -121,7 +179,7 @@ async function genCells(args: any, completionType: CompletionType) {
   );
 }
 
-export async function setModel() : Promise<string | undefined> {
+export async function setModel(): Promise<string | undefined> {
   const openaiApiKey = await getOpenAIApiKey();
 
   if (!openaiApiKey) {
@@ -130,8 +188,7 @@ export async function setModel() : Promise<string | undefined> {
 
   const openai = new OpenAI({ apiKey: openaiApiKey });
 
-  const models = (await openai.models.list()).data.map(
-    (x) => x.id).filter(x => x.startsWith("gpt"));
+  const models = (await openai.models.list()).data.map((x) => x.id).filter((x) => x.startsWith("gpt"));
 
   const model = await window.showQuickPick(models, {
     ignoreFocusOut: true,
@@ -186,4 +243,35 @@ async function setRole(role: ChatCompletionRole) {
     }),
   ]);
   await workspace.applyEdit(edit);
+}
+
+export async function promptToolExecutions(
+  toolCalls: ChatCompletionChunk.Choice.Delta.ToolCall[],
+  cancellationToken: CancellationToken
+): Promise<ToolCallWithResult[]> {
+  type QuickPickWithToolId = QuickPickItem & {
+    toolCallId: string;
+  };
+
+  let availableToolCalls: QuickPickWithToolId[] = toolCalls.map<QuickPickWithToolId>((t) => ({
+    toolCallId: t.id!,
+    label: t.function!.name!,
+    description: t.function!.arguments,
+    picked: true,
+  }));
+
+  const selectedStrategies = await window.showQuickPick(
+    availableToolCalls,
+    {
+      ignoreFocusOut: true,
+      canPickMany: true,
+      title: `The OpenAI model wants to call the following functions. Please choose which functions are allowed to execute and their results sent back to the OpenAI model.`,
+    },
+    cancellationToken
+  );
+
+  return toolCalls.map((toolCall) => {
+    const isPicked = selectedStrategies?.some((s) => s.picked && s.toolCallId === toolCall.id!);
+    return { ...toolCall, result: isPicked ? "" : "The user declined the execution of this tool call" };
+  });
 }

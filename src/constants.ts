@@ -1,3 +1,7 @@
+import { ITool } from "./tools/ITool";
+import { findFilesTool } from "./tools/findFilesTool";
+import { readFilesTool } from "./tools/readFileTool";
+
 export const msgs = {
   genNextCell: "Generating next cell(s)...",
   compCompleted: "Cell generation completed",
@@ -16,7 +20,7 @@ export const msgs = {
   notEnoughSavings: "The selected strategies do not reduce tokens below the limit.",
   calculatingTokeReductions: "Token limit reached. Calculating potential reductions...",
   calculatingTokens: "Calculating tokens...",
-  modelNotSet: "You must choose a valid model before proceeding."
+  modelNotSet: "You must choose a valid model before proceeding.",
 };
 
 export const prompts = {
@@ -44,8 +48,16 @@ export const configKeys = {
 };
 
 export const uiText = {
-    removeOutput : "Remove all Cell Output",
-    removeProblems: "Remove all VSCode Problems",
-    removeSystemMsg: "Remove System Message",
-    tabifyWhiteSpaces: "Tabify whitespaces"
+  removeCodeCells: "Remove all code problems",
+  removeOutput: "Remove all code cell output",
+  removeProblems: "Remove all code cell problems",
+  removeSystemMsg: "Remove system message",
 };
+
+export const messageMetadata = {
+  jupyterCodeCell: "JupyterCodeCell",
+  jupyterCodeCellProblems: "JupyterCodeCellProblems",
+  jupyterCodeCellOutput: "JupyterCodeCellOutput",
+};
+
+export const tools: ITool[] = [findFilesTool, readFilesTool];

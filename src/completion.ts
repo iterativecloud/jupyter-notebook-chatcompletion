@@ -1,32 +1,44 @@
 import { TiktokenModel } from "@dqbd/tiktoken";
-import OpenAI from "openai";
 import { ChatCompletionChunk } from "openai/resources";
 import { Stream } from "openai/streaming";
-import { CancellationToken, NotebookCellKind, NotebookEdit, NotebookRange, WorkspaceEdit, window, workspace } from "vscode";
-import { appendTextToCell, convertCellsToMessages, insertCell } from "./cellUtils";
-import { CompletionType } from "./completionType";
-import { addParametersFromMetadata as addNotebookConfigParams, getOpenAIApiKey, getTokenLimit } from "./config";
+import {
+  CancellationToken,
+  NotebookCellKind,
+  NotebookEdit,
+  NotebookRange,
+  TextEditorCursorStyle,
+  WorkspaceEdit,
+  window,
+  workspace,
+} from "vscode";
+import { appendTextToCell, insertCell } from "./utilities/cellUtils";
 import { msgs } from "./constants";
-import { setModel } from "./extension";
 import { FinishReason } from "./finishReason";
-import { bufferWholeChunks, streamChatCompletion } from "./streamUtils";
-import { applyTokenReductions, countTokens } from "./tokenUtils";
-import { UIProgress, waitForUIDispatch } from "./uiProgress";
+import { bufferWholeChunks, streamChatCompletion } from "./utilities/streamUtils";
+import { UIProgress } from "./uiProgress";
 
-const output = window.createOutputChannel("Notebook ChatCompletion");
+export const output = window.createOutputChannel("Notebook ChatCompletion", "json");
 
-async function streamResponse(
+export async function streamResponse(
   responseStream: Stream<ChatCompletionChunk>,
   cancelToken: CancellationToken,
   cellIndex: number,
   ck: NotebookCellKind | undefined,
   progress: UIProgress
-) {
+): Promise<FinishReason | ChatCompletionChunk.Choice.Delta.ToolCall[]> {
   const editor = window.activeNotebookEditor!;
   output.show(true);
 
-  for await (let textToken of bufferWholeChunks(streamChatCompletion(responseStream, cancelToken))) {
-    if (Object.values(FinishReason).includes(textToken as FinishReason)) {
+  let hasPrintedNotebookWriteBanner = false;
+  for await (let textTokenOrFinishReason of bufferWholeChunks(streamChatCompletion(responseStream, cancelToken))) {
+    // When ToolCall[] is returned
+    if (Array.isArray(textTokenOrFinishReason)) {
+      output.appendLine("___Tool calls_________________________________");
+      output.appendLine(JSON.stringify(textTokenOrFinishReason, null, 2));
+      return textTokenOrFinishReason;
+    }
+
+    if (Object.values(FinishReason).includes(textTokenOrFinishReason as FinishReason)) {
       const currentCell = window.activeNotebookEditor!.notebook.cellAt(cellIndex);
       const text = currentCell.document.getText();
 
@@ -36,22 +48,26 @@ async function streamResponse(
         await workspace.applyEdit(edit);
       }
 
-      return textToken as FinishReason;
+      return textTokenOrFinishReason as FinishReason;
     } else {
-      output.append(textToken.toString());
+      if (!hasPrintedNotebookWriteBanner) {
+        output.appendLine("___Writes to Notebook_________________________");
+        hasPrintedNotebookWriteBanner = true;
+      }
+      output.append(textTokenOrFinishReason.toString());
     }
 
-    if (typeof textToken !== "string") {
-      throw new Error(`Unknown stream result: ${textToken}`);
+    if (typeof textTokenOrFinishReason !== "string") {
+      throw new Error(`Unknown stream result: ${textTokenOrFinishReason}`);
     }
 
-    if (textToken.includes("```python\n")) {
+    if (textTokenOrFinishReason.includes("```python\n")) {
       ck = NotebookCellKind.Code;
 
       cellIndex = await insertCell(editor, cellIndex, ck, "python");
-      textToken = textToken.replace("```python\n", "");
-    } else if (textToken.includes("```") && ck === NotebookCellKind.Code) {
-      textToken = textToken.replace("```", "");
+      textTokenOrFinishReason = textTokenOrFinishReason.replace("```python\n", "");
+    } else if (textTokenOrFinishReason.includes("```") && ck === NotebookCellKind.Code) {
+      textTokenOrFinishReason = textTokenOrFinishReason.replace("```", "");
 
       ck = NotebookCellKind.Markup;
       cellIndex = await insertCell(editor, cellIndex, ck);
@@ -62,7 +78,7 @@ async function streamResponse(
       ck = NotebookCellKind.Markup;
     }
 
-    await appendTextToCell(editor, cellIndex, textToken);
+    await appendTextToCell(editor, cellIndex, textTokenOrFinishReason);
 
     progress.report({ increment: 0.5, message: msgs.receivingTokens });
   }
@@ -70,8 +86,8 @@ async function streamResponse(
   return FinishReason.length;
 }
 
-function getValidAlternativeIfAvailable(model: string): TiktokenModel {
-  // For new models we know already exists but are not yet known by Tiktoken (needs update), we choose a valid alternative model ourselves.
+export function getValidAlternativeIfAvailable(model: string): TiktokenModel {
+  // For new models we know exists but are not known by Tiktoken, we choose a suitable alternative
   switch (model) {
     case "gpt-3.5-turbo-16k-0613":
     case "gpt-3.5-turbo-0613":
@@ -85,109 +101,4 @@ function getValidAlternativeIfAvailable(model: string): TiktokenModel {
     default:
       return model as TiktokenModel;
   }
-}
-
-export async function generateCompletion(
-  cellIndex: number,
-  completionType: CompletionType,
-  progress: UIProgress,
-  cancelToken: CancellationToken
-): Promise<FinishReason> {
-  const e = window.activeNotebookEditor!;
-  let messages = await convertCellsToMessages(cellIndex, completionType);
-  let ck: NotebookCellKind | undefined = undefined;
-
-  const openaiApiKey = await getOpenAIApiKey();
-
-  if (!openaiApiKey) {
-    throw new Error(msgs.apiKeyNotSet);
-  }
-
-  const openai = new OpenAI({ apiKey: openaiApiKey });
-
-  let nbMetadata = e.notebook.metadata.custom;
-
-  if (!nbMetadata?.model) {
-    const result = await setModel();
-    if (result) {
-      nbMetadata = e.notebook.metadata.custom;
-    } else {
-      throw new Error(msgs.modelNotSet);
-    }
-  }
-
-  const model: TiktokenModel = nbMetadata?.model;
-  let knownTikTokenModel: TiktokenModel = getValidAlternativeIfAvailable(model);
-
-  const temperature = nbMetadata?.temperature ?? 0;
-  const limit = getTokenLimit(model);
-
-  progress.report({ message: msgs.calculatingTokens, increment: 1 });
-  await waitForUIDispatch();
-
-  let skipTokenization = false;
-
-  try {
-    const totalTokenCount = countTokens(messages, knownTikTokenModel);
-
-    if (limit !== null && totalTokenCount > limit) {
-      const tokenOverflow = totalTokenCount - limit;
-
-      progress.report({ message: msgs.calculatingTokeReductions, increment: 1 });
-      await waitForUIDispatch();
-
-      const reducedMessages = await applyTokenReductions(messages, tokenOverflow, limit, knownTikTokenModel);
-
-      if (!reducedMessages) {
-        return FinishReason.cancelled;
-      }
-
-      messages = reducedMessages;
-    }
-  } catch (error: any) {
-    skipTokenization = true;
-    window.showWarningMessage("Error while counting tokens - skipping token limit checks", {
-      modal: false,
-      detail:
-        "We couldn't count the tokens. This can happen for newer, unknown models (this extension has to be updated).\n" +
-        error.message,
-    });
-  }
-
-  let reqParams: OpenAI.Chat.ChatCompletionCreateParamsStreaming = {
-    model: model,
-    messages: messages,
-    temperature: temperature,
-    stream: true
-  };
-
-  if (limit) {
-    if (!skipTokenization) {
-      const reducedTokenCount = countTokens(messages, knownTikTokenModel);
-      reqParams.max_tokens = limit - reducedTokenCount;
-    }
-
-    if (reqParams.max_tokens && reqParams.max_tokens < 1) {
-      const result = await window.showInformationMessage(
-        `The request is estimated to be ${-reqParams.max_tokens} tokens over the limit (including the input) and will likely be rejected from the OpenAI API. Do you still want to proceed?`,
-        { modal: true },
-        "Yes"
-      );
-      if (result !== "Yes") {
-        return FinishReason.cancelled;
-      } else {
-        // The user still wants to send the requests despite the going over the limit. In that case we completely remove the max_tokens parameter.
-        reqParams.max_tokens = undefined;
-      }
-    }
-  }
-
-  reqParams = addNotebookConfigParams(nbMetadata, reqParams);
-
-  output.appendLine("\n" + JSON.stringify(reqParams, undefined, 2) + "\n");
-  progress.report({ increment: 1, message: msgs.sendingRequest });
-
-  const stream = await openai.chat.completions.create(reqParams);
-  
-  return await streamResponse(stream , cancelToken, cellIndex, ck, progress);
 }

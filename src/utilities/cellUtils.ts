@@ -1,3 +1,4 @@
+import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import {
   NotebookCellKind,
   NotebookEdit,
@@ -10,9 +11,9 @@ import {
   window,
   workspace,
 } from "vscode";
-import { ChatCompletionMessageParamEx } from "./chatCompletionMessageParamEx";
-import { ChatCompletionRole } from "./chatCompletionRole";
-import { CompletionType } from "./completionType";
+import { ChatCompletionRole } from "../chatCompletionRole";
+import { CompletionType } from "../completionType";
+import { messageMetadata } from "../constants";
 
 export async function appendTextToCell(editor: NotebookEditor, cellIndex: number, textToken: string) {
   const existingCell = editor.notebook.cellAt(cellIndex);
@@ -74,7 +75,7 @@ export async function insertCell(editor: NotebookEditor, cellIndex: number, cell
   return cellIndex;
 }
 
-export async function convertCellsToMessages(cellIndex: number, completionType: CompletionType): Promise<ChatCompletionMessageParamEx[]> {
+export async function convertCellsToMessages(cellIndex: number, completionType: CompletionType): Promise<ChatCompletionMessageParam[]> {
   const editor = window.activeNotebookEditor!;
   const notebook = editor.notebook;
 
@@ -86,12 +87,12 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
     .flatMap(([, diag]) => diag);
 
   const cellInfos = notebook.getCells(new NotebookRange(startCellIndex, cellIndex + 1)).map((cell) => {
-    const problems = diagnostics.filter((d) => cell.document.validateRange(d.range) === d.range);
+    const cellProblems = diagnostics.filter((d) => cell.document.validateRange(d.range) === d.range);
     const nonImgOutputs = cell.outputs.flatMap((o) => o.items.filter((i) => !i.mime.startsWith("image"))).map((i) => i.data.toString());
-    return { cell, problems, nonImgOutputs };
+    return { cell, problems: cellProblems, nonImgOutputs };
   });
 
-  var messages: ChatCompletionMessageParamEx[] = [];
+  var messages: ChatCompletionMessageParam[] = [];
 
   cellInfos.forEach(({ cell, problems, nonImgOutputs }) => {
     let role: ChatCompletionRole = "user";
@@ -104,7 +105,7 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
     let cellContent = cell.document.getText();
 
     if (cell.kind === NotebookCellKind.Code) {
-      cellContent = `\`\`\`python \n${cellContent}\n\`\`\``;
+      cellContent = `<${messageMetadata.jupyterCodeCell}>\`\`\`python \n${cellContent}\n\`\`\`</${messageMetadata.jupyterCodeCell}>`;
     }
 
     messages.push({ role: role as never, content: cellContent, name: cell.kind.toString() });
@@ -112,8 +113,9 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
     if (problems.length > 0) {
       messages.push({
         role: role ?? "user",
-        name: "Problems",
-        content: "Problems reported by VSCode from previous code:\n" + problems.map((p) => `${p.code}: ${p.message}`),
+        content: `<${messageMetadata.jupyterCodeCellProblems}>:\n${problems.map((p) => `${p.code}: ${p.message}`)}\n</${
+          messageMetadata.jupyterCodeCellProblems
+        }>`,
       });
     }
 
@@ -121,8 +123,7 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
       nonImgOutputs.forEach((output) =>
         messages.push({
           role: role ?? "user",
-          name: "Output",
-          content: "Output from previous code:\n" + output,
+          content: `<${messageMetadata.jupyterCodeCellOutput}>\n${output}\n</${messageMetadata.jupyterCodeCellOutput}>`,
         })
       );
     }
@@ -134,8 +135,8 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
   if (systemMessages.length === 0) {
     messages.push({
       role: "system",
-      name: "system",
-      content: "Format your answer as markdown. If you include a markdown code block, specify the language.",
+      content:
+        "Format your answer as markdown. If you include a markdown code block, specify the language. All the functions or tools you can call are operating within the context of a VSCode workspace.",
     });
   }
 
