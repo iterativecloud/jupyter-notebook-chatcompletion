@@ -2,10 +2,11 @@ import OpenAI from "openai";
 import { ToolCallWithResult } from "../toolCallWithResult";
 import { workspace } from "vscode";
 import { ITool } from "./ITool";
+import path = require("path");
 
 export const findFilesTool: ITool = {
   toolName: "findFiles",
-  toolDescription: "Find files across all workspace folders in the VSCode workspace (case-sensitive)",
+  toolDescription: "Find files across all workspace folders in the VSCode workspace (case-sensitive). Returns a comma-separated list of file paths relative to the workspace folder.",
   properties: {
     include: {
       name: "include",
@@ -32,9 +33,13 @@ async function executeToolCall(toolCall: OpenAI.Chat.Completions.ChatCompletionC
   let resultText = `No results with findFile for your include parameter '${includeParameter}'`;
 
   if (result.length > 0) {
-    resultText = result.toString();
-  }
+    const workspaceFolderPath = workspace.workspaceFolders![0].uri.fsPath!;
 
+    // Convert each file path in the result to a path relative to the workspace folder
+    resultText = result
+      .map((filePath) => path.relative(workspaceFolderPath, filePath.fsPath))
+      .join(",");
+  }
   return {
     function: toolCall.function,
     result: resultText,
