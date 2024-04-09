@@ -48,9 +48,9 @@ async function executeToolCall(toolCall: OpenAI.Chat.Completions.ChatCompletionC
       const content = textDoc.getText();
       // const docSymbols: SymbolInformation[] = await commands.executeCommand("vscode.executeWorkspaceSymbolProvider", "");
       // docSymbols.filter((symbol) => symbol.location.uri.toString() === textDoc.uri.toString()).forEach((symbol) => {});
-      contents += `<File uri="${textDoc.uri.toString()}" lineCount="${textDoc.lineCount}" eol="${textDoc.eol}" languageId="${
+      contents += `\n<File uri="${textDoc.uri.toString()}" lineCount="${textDoc.lineCount}" eol="${textDoc.eol}" languageId="${
         textDoc.languageId
-      }" languageId="${textDoc}"><![CDATA[${content}]]></File>`;
+      }" languageId="${textDoc}">\n<![CDATA[${content}]]>\n</File>\n`;
     }
 
     return {
