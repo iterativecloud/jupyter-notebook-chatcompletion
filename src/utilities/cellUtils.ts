@@ -14,6 +14,7 @@ import {
 import { ChatCompletionRole } from "../chatCompletionRole";
 import { CompletionType } from "../completionType";
 import { messageMetadata } from "../constants";
+import { ToolCallWithResult } from "../toolCallWithResult";
 
 export async function appendTextToCell(editor: NotebookEditor, cellIndex: number, textToken: string) {
   const existingCell = editor.notebook.cellAt(cellIndex);
@@ -70,6 +71,17 @@ export async function insertCell(editor: NotebookEditor, cellIndex: number, cell
       custom: { metadata: { tags: ["assistant"] } },
     }),
   ]);
+  await workspace.applyEdit(edit);
+
+  return cellIndex;
+}
+
+export async function updateToolResultsCellMetadata(editor: NotebookEditor, cellIndex: number, toolResults: ToolCallWithResult[]) {
+  const edit = new WorkspaceEdit();
+  let cell = editor.notebook.cellAt(cellIndex);
+  const updatedCellMetadata = cell.metadata.custom.metadata;
+  updatedCellMetadata.toolResults = toolResults;
+  edit.set(cell.notebook.uri, [NotebookEdit.updateCellMetadata(cell.index, updatedCellMetadata)]);
   await workspace.applyEdit(edit);
 
   return cellIndex;

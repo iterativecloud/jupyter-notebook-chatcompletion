@@ -12,25 +12,33 @@ import {
   window,
   workspace,
 } from "vscode";
+import { output } from "./completion";
 import { CompletionType } from "./completionType";
-import { getOpenAIApiKey } from "./config";
 import { errorMessages, msgs, prompts, tools } from "./constants";
 import { FinishReason } from "./finishReason";
 import { generateCompletion } from "./generateCompletion";
 import { ToolCallWithResult } from "./toolCallWithResult";
 import { waitForUIDispatch } from "./uiProgress";
-import { output } from "./completion";
-import { ToolCall } from "openai/resources/beta/threads/runs/steps";
+import { updateToolResultsCellMetadata } from "./utilities/cellUtils";
+import { App } from "./viewmodels/App";
 
 export async function activate(ctx: ExtensionContext) {
   const regCmd = (cmd: string, handler: (...args: any[]) => any) =>
-    ctx.subscriptions.push(commands.registerCommand("notebook-chatcompletion." + cmd, handler));
+    ctx.subscriptions.push(
+      commands.registerCommand("notebook-chatcompletion." + cmd, async (args) => {
+        try {
+          await handler(args);
+        } catch (error: any) {
+          window.showErrorMessage(error, { modal: true });
+        }
+      })
+    );
 
   regCmd("sendCellAndAbove", (...args) => genCells(args, CompletionType.currentCellAndAbove));
   regCmd("sendCell", (...args) => genCells(args, CompletionType.currentCell));
   regCmd("setRoleAssistant", () => setRole("assistant"));
   regCmd("setRoleSystem", () => setRole("system"));
-  regCmd("setModel", setModel);
+  regCmd("setModel", App.current.setOpenAIModel);
   regCmd("setTemperature", () => setParam(prompts.temperature, "temperature", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat));
   regCmd("setTopP", () => setParam(prompts.topP, "top_p", (v) => parseFloat(v) >= 0 && parseFloat(v) <= 1, parseFloat));
   regCmd("setMaxTokens", () => setParam(prompts.maxTokens, "max_tokens", (v) => parseInt(v) > 0, parseInt));
@@ -113,6 +121,7 @@ async function genCells(args: any, completionType: CompletionType) {
               }
 
               functionCallResults = await Promise.all(promiseArray);
+              updateToolResultsCellMetadata(window.activeNotebookEditor!, cellIndex, functionCallResults);
             }
 
             continue;
@@ -179,39 +188,6 @@ async function genCells(args: any, completionType: CompletionType) {
   );
 }
 
-export async function setModel(): Promise<string | undefined> {
-  const openaiApiKey = await getOpenAIApiKey();
-
-  if (!openaiApiKey) {
-    throw new Error(msgs.apiKeyNotSet);
-  }
-
-  const openai = new OpenAI({ apiKey: openaiApiKey });
-
-  const models = (await openai.models.list()).data.map((x) => x.id).filter((x) => x.startsWith("gpt"));
-
-  const model = await window.showQuickPick(models, {
-    ignoreFocusOut: true,
-    placeHolder: prompts.selectModel,
-  });
-
-  if (model) {
-    const editor = window.activeNotebookEditor!;
-    const edit = new WorkspaceEdit();
-    edit.set(editor.notebook.uri, [
-      NotebookEdit.updateNotebookMetadata({
-        custom: {
-          ...editor.notebook.metadata.custom,
-          model: model,
-        },
-      }),
-    ]);
-    await workspace.applyEdit(edit);
-  }
-
-  return model;
-}
-
 async function setParam(prompt: string, key: string, validateFn: (v: string) => any, parseFn: ((v: string) => any) | null = null) {
   const editor = window.activeNotebookEditor!;
   const value = await window.showInputBox({
@@ -274,4 +250,7 @@ export async function promptToolExecutions(
     const isPicked = selectedStrategies?.some((s) => s.picked && s.toolCallId === toolCall.id!);
     return { ...toolCall, result: isPicked ? "" : "The user declined the execution of this tool call" };
   });
+}
+function saveNotebookModel(model: string) {
+  throw new Error("Function not implemented.");
 }

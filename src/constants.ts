@@ -3,6 +3,7 @@ import { findFilesTool } from "./tools/findFilesTool";
 import { readFilesTool } from "./tools/readFileTool";
 
 export const msgs = {
+  noActiveNotebook: "No active notebook found. Please open a notebook and try again.",
   genNextCell: "Generating next cell(s)...",
   compCompleted: "Cell generation completed",
   compCancelled: "Generation cancelled",

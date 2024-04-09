@@ -11,13 +11,13 @@ import { convertCellsToMessages } from "./utilities/cellUtils";
 import { CompletionType } from "./completionType";
 import { addParametersFromMetadata as addNotebookConfigParams, getOpenAIApiKey, getTokenLimit } from "./config";
 import { msgs, tools } from "./constants";
-import { setModel } from "./extension";
 import { FinishReason } from "./finishReason";
 import { applyTokenReductions, countTokens } from "./utilities/tokenUtils";
 import { UIProgress, waitForUIDispatch } from "./uiProgress";
 import { getValidAlternativeIfAvailable, output, streamResponse } from "./completion";
 import { findFilesTool } from "./tools/findFilesTool";
 import { ToolCallWithResult } from "./toolCallWithResult";
+import { App } from "./viewmodels/App";
 
 export async function generateCompletion(
   cellIndex: number,
@@ -65,7 +65,7 @@ export async function generateCompletion(
   let nbMetadata = e.notebook.metadata.custom;
 
   if (!nbMetadata?.model) {
-    const result = await setModel();
+    const result = await App.current.setOpenAIModel();
     if (result) {
       nbMetadata = e.notebook.metadata.custom;
     } else {
