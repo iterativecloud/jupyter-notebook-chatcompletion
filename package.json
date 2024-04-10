@@ -11,6 +11,7 @@
     "url": "https://github.com/iterativecloud/jupyter-notebook-chatcompletion/issues/new"
   },
   "icon": "jupyter-extension-logo-128.png",
+  "l10n": "./l10n",
   "homepage": "https://www.iterative.cloud",
   "license": "MIT",
   "markdown": "github",
@@ -179,6 +180,7 @@
     "@types/glob": "^8.1.0",
     "@types/mocha": "^10.0.1",
     "@types/node": "16.x",
+    "@types/package-json": "^5.0.1",
     "@types/vscode": "^1.76.0",
     "@typescript-eslint/eslint-plugin": "^5.56.0",
     "@typescript-eslint/parser": "^5.56.0",

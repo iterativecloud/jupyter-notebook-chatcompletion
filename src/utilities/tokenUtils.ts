@@ -1,7 +1,7 @@
 import { TiktokenModel, encoding_for_model } from "@dqbd/tiktoken";
 import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { QuickPickItem, window } from "vscode";
-import { messageMetadata, uiText } from "../constants";
+import { Constants } from "../Constants";
 import OpenAI from "openai";
 
 function tabifyWhitespaces(message: ChatCompletionMessageParam): ChatCompletionMessageParam {
@@ -17,10 +17,19 @@ export async function applyTokenReductions(
   model: TiktokenModel
 ): Promise<ChatCompletionMessageParam[] | null> {
   const replacements: { label: string; reduce: (message: ChatCompletionMessageParam) => ChatCompletionMessageParam | null }[] = [
-    { label: uiText.removeOutput, reduce: (m) => (m.content!.toString().includes(messageMetadata.jupyterCodeCellOutput) ? null : m) },
-    { label: uiText.removeProblems, reduce: (m) => (m.content!.toString().includes(messageMetadata.jupyterCodeCellProblems) ? null : m) },
-    { label: uiText.removeCodeCells, reduce: (m) => (m.content!.toString().includes(messageMetadata.jupyterCodeCell) ? null : m) },
-    { label: uiText.removeSystemMsg, reduce: (m) => (m.role === "system" ? null : m) },
+    {
+      label: Constants.removeOutput,
+      reduce: (m) => (m.content!.toString().includes(Constants.messageMetadata.jupyterCodeCellOutput) ? null : m),
+    },
+    {
+      label: Constants.removeProblems,
+      reduce: (m) => (m.content!.toString().includes(Constants.messageMetadata.jupyterCodeCellProblems) ? null : m),
+    },
+    {
+      label: Constants.removeCodeCells,
+      reduce: (m) => (m.content!.toString().includes(Constants.messageMetadata.jupyterCodeCell) ? null : m),
+    },
+    { label: Constants.removeSystemMsg, reduce: (m) => (m.role === "system" ? null : m) },
   ];
 
   type TokenReductionStrategy = QuickPickItem & {
@@ -89,4 +98,49 @@ export function countTokens(messages: any[], tools: OpenAI.Chat.Completions.Chat
 
   numTokens += 3;
   return numTokens;
+}
+
+export function getTokenLimit(model: string): number | null {
+  switch (model) {
+    case "gpt-3.5-turbo":
+    case "gpt-3.5-turbo-0125":
+    case "gpt-3.5-turbo-1106":
+    case "gpt-3.5-turbo-instruct":
+    case "gpt-3.5-turbo-0613":
+    case "gpt-4-0125-preview":
+    case "gpt-4-turbo-preview":
+    case "gpt-4-1106-preview":
+    case "gpt-4-vision-preview":
+    case "gpt-4-1106-vision-preview":
+      return 4096;
+    case "gpt-3.5-turbo-16k":
+    case "gpt-3.5-turbo-16k-0613":
+      return 16385;
+    case "gpt-4-32k":
+    case "gpt-4-32k-0613":
+      return 32768;
+    case "gpt-4":
+    case "gpt-4-0613":
+      return 8192;
+    default:
+      // if we don't know the model, we return null to signal no applicable limit
+      return null;
+  }
+}
+
+export function getValidAlternativeIfAvailable(model: string): TiktokenModel {
+  // For new models we know exists but are not known by Tiktoken, we choose a suitable alternative
+  switch (model) {
+    case "gpt-3.5-turbo-16k-0613":
+    case "gpt-3.5-turbo-0613":
+    case "gpt-3.5-turbo-16k":
+      return "gpt-3.5-turbo";
+
+    case "gpt-4-0613":
+    case "gpt-4-32k-0613":
+      return "gpt-4";
+
+    default:
+      return model as TiktokenModel;
+  }
 }

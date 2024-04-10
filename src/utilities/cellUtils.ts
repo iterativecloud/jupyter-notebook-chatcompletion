@@ -11,10 +11,10 @@ import {
   window,
   workspace,
 } from "vscode";
-import { ChatCompletionRole } from "../chatCompletionRole";
-import { CompletionType } from "../completionType";
-import { messageMetadata } from "../constants";
-import { ToolCallWithResult } from "../toolCallWithResult";
+import { ChatCompletionRole } from "../models/ChatCompletionRole";
+import { CompletionType } from "../models/completionType";
+import { Constants } from "../Constants";
+import { ToolCallExecutionResult } from "../models/ToolCallExecutionResult";
 
 export async function appendTextToCell(editor: NotebookEditor, cellIndex: number, textToken: string) {
   const existingCell = editor.notebook.cellAt(cellIndex);
@@ -76,7 +76,7 @@ export async function insertCell(editor: NotebookEditor, cellIndex: number, cell
   return cellIndex;
 }
 
-export async function updateToolResultsCellMetadata(editor: NotebookEditor, cellIndex: number, toolResults: ToolCallWithResult[]) {
+export async function updateToolResultsCellMetadata(editor: NotebookEditor, cellIndex: number, toolResults: ToolCallExecutionResult[]) {
   const edit = new WorkspaceEdit();
   let cell = editor.notebook.cellAt(cellIndex);
   const updatedCellMetadata = cell.metadata.custom.metadata;
@@ -117,7 +117,7 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
     let cellContent = cell.document.getText();
 
     if (cell.kind === NotebookCellKind.Code) {
-      cellContent = `<${messageMetadata.jupyterCodeCell}>\`\`\`python \n${cellContent}\n\`\`\`</${messageMetadata.jupyterCodeCell}>`;
+      cellContent = `<${Constants.messageMetadata.jupyterCodeCell}>\`\`\`python \n${cellContent}\n\`\`\`</${Constants.messageMetadata.jupyterCodeCell}>`;
     }
 
     messages.push({ role: role as never, content: cellContent, name: cell.kind.toString() });
@@ -125,8 +125,8 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
     if (problems.length > 0) {
       messages.push({
         role: role ?? "user",
-        content: `<${messageMetadata.jupyterCodeCellProblems}>:\n${problems.map((p) => `${p.code}: ${p.message}`)}\n</${
-          messageMetadata.jupyterCodeCellProblems
+        content: `<${Constants.messageMetadata.jupyterCodeCellProblems}>:\n${problems.map((p) => `${p.code}: ${p.message}`)}\n</${
+          Constants.messageMetadata.jupyterCodeCellProblems
         }>`,
       });
     }
@@ -135,7 +135,7 @@ export async function convertCellsToMessages(cellIndex: number, completionType: 
       nonImgOutputs.forEach((output) =>
         messages.push({
           role: role ?? "user",
-          content: `<${messageMetadata.jupyterCodeCellOutput}>\n${output}\n</${messageMetadata.jupyterCodeCellOutput}>`,
+          content: `<${Constants.messageMetadata.jupyterCodeCellOutput}>\n${output}\n</${Constants.messageMetadata.jupyterCodeCellOutput}>`,
         })
       );
     }

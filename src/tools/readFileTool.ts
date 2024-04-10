@@ -1,11 +1,10 @@
 import OpenAI from "openai";
-import { ToolCallWithResult } from "../toolCallWithResult";
-import { SymbolInformation, Uri, commands, languages, workspace } from "vscode";
-import { ITool } from "./ITool";
-import { output } from "../completion";
+import { Uri, workspace } from "vscode";
+import { Tool } from "../models/Tool";
+import { ToolCallExecutionResult } from "../models/ToolCallExecutionResult";
 import path = require("path");
 
-export const readFilesTool: ITool = {
+export const readFilesTool: Tool = {
   toolName: "readFiles",
   toolDescription: "Reads the content of the given relative file paths in the VSCode workspace and returns it as string.",
   required: ["relativeFilePaths"],
@@ -26,10 +25,10 @@ export const readFilesTool: ITool = {
       },
     },
   },
-  executeToolCall: executeToolCall,
+  execute: executeToolCall,
 };
 
-async function executeToolCall(toolCall: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall): Promise<ToolCallWithResult> {
+async function executeToolCall(toolCall: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall): Promise<ToolCallExecutionResult> {
   let filePathUris: Uri[] | null = null;
 
   if (toolCall!.function!.arguments) {

@@ -1,9 +1,9 @@
 import { ChatCompletionChunk } from "openai/resources";
 import { Stream } from "openai/streaming";
 import { CancellationError, CancellationToken } from "vscode";
-import { FinishReason } from "../finishReason";
-import { getOpenAIApiKey } from "../config";
+import { FinishReason } from "../models/FinishReason";
 import OpenAI from "openai";
+import { App } from "../viewmodels/App";
 
 export async function* streamChatCompletion(
   responseStream: Stream<ChatCompletionChunk>,
@@ -145,7 +145,7 @@ async function mergeToolCallDeltas(
         console.warn(`Unable to parse JSON arguments for ToolCall with index ${index}:`, error);
 
         try {
-          const openaiApiKey = await getOpenAIApiKey();
+          const openaiApiKey = await App.current.config.getOpenAIApiKey();
           const openai = new OpenAI({ apiKey: openaiApiKey });
 
           let reqParams: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {

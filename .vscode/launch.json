@@ -25,6 +25,9 @@
 				"--extensionDevelopmentPath=${workspaceFolder}",
 				"--extensionTestsPath=${workspaceFolder}/out/test/suite/index"
 			],
+			"skipFiles": [
+				"<node_internals>/**/*.js",
+			],
 			"outFiles": [
 				"${workspaceFolder}/out/test/**/*.js"
 			],

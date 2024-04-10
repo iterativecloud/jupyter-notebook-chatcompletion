@@ -1,12 +1,13 @@
 import OpenAI from "openai";
-import { ToolCallWithResult } from "../toolCallWithResult";
 import { workspace } from "vscode";
-import { ITool } from "./ITool";
+import { Tool } from "../models/Tool";
+import { ToolCallExecutionResult } from "../models/ToolCallExecutionResult";
 import path = require("path");
 
-export const findFilesTool: ITool = {
+export const findFilesTool: Tool = {
   toolName: "findFiles",
-  toolDescription: "Find files across all workspace folders in the VSCode workspace (case-sensitive). Returns a comma-separated list of file paths relative to the workspace folder.",
+  toolDescription:
+    "Find files across all workspace folders in the VSCode workspace (case-sensitive). Returns a comma-separated list of file paths relative to the workspace folder.",
   properties: {
     include: {
       name: "include",
@@ -15,11 +16,11 @@ export const findFilesTool: ITool = {
         "A glob pattern that defines the files to search for, which is case-sensitive and must always search across multiple directory levels.",
     },
   },
-  executeToolCall: executeToolCall,
   required: ["include"],
+  execute: execute,
 };
 
-async function executeToolCall(toolCall: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall): Promise<ToolCallWithResult> {
+async function execute(toolCall: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall): Promise<ToolCallExecutionResult> {
   let includeParameter: string | null = null;
 
   if (toolCall!.function!.arguments) {
@@ -36,9 +37,7 @@ async function executeToolCall(toolCall: OpenAI.Chat.Completions.ChatCompletionC
     const workspaceFolderPath = workspace.workspaceFolders![0].uri.fsPath!;
 
     // Convert each file path in the result to a path relative to the workspace folder
-    resultText = result
-      .map((filePath) => path.relative(workspaceFolderPath, filePath.fsPath))
-      .join(",");
+    resultText = result.map((filePath) => path.relative(workspaceFolderPath, filePath.fsPath)).join(",");
   }
   return {
     function: toolCall.function,
